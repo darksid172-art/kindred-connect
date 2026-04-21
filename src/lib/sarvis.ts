@@ -1,0 +1,232 @@
+import { supabase } from "@/integrations/supabase/client";
+
+export type Role = "user" | "assistant";
+
+export interface Message {
+  id: string;
+  role: Role;
+  content: string;
+  imageUrl?: string;
+  createdAt: number;
+}
+
+export interface Chat {
+  id: string;
+  title: string;
+  messages: Message[];
+  createdAt: number;
+}
+
+const STORAGE_KEY = "sarvis_chats";
+
+export function loadChats(): Chat[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveChats(chats: Chat[]) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(chats));
+  } catch {
+    // localStorage unavailable — silently continue
+  }
+}
+
+export function newChat(): Chat {
+  return {
+    id: `chat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    title: "New Chat",
+    messages: [],
+    createdAt: Date.now(),
+  };
+}
+
+export function newMessage(role: Role, content: string, imageUrl?: string): Message {
+  return {
+    id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    role,
+    content,
+    imageUrl,
+    createdAt: Date.now(),
+  };
+}
+
+export function deriveTitle(text: string): string {
+  const t = text.trim().replace(/\s+/g, " ");
+  return t.length <= 30 ? t : t.slice(0, 30) + "…";
+}
+
+export function isImageRequest(text: string): boolean {
+  return /\b(image|draw|picture|generate.+(image|picture)|paint|sketch)\b/i.test(text);
+}
+
+const PROJECT_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+
+export async function streamChat({
+  messages,
+  model,
+  systemPrompt,
+  onDelta,
+  onDone,
+  onError,
+  signal,
+}: {
+  messages: { role: Role; content: string }[];
+  model?: string;
+  systemPrompt?: string;
+  onDelta: (chunk: string) => void;
+  onDone: () => void;
+  onError: (err: string) => void;
+  signal?: AbortSignal;
+}) {
+  try {
+    const resp = await fetch(`${PROJECT_URL}/functions/v1/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${PUBLISHABLE_KEY}`,
+      },
+      body: JSON.stringify({ messages, model, systemPrompt }),
+      signal,
+    });
+
+    if (!resp.ok || !resp.body) {
+      let msg = `HTTP ${resp.status}`;
+      try {
+        const j = await resp.json();
+        msg = j.error || msg;
+      } catch {
+        // ignore
+      }
+      onError(msg);
+      return;
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let done = false;
+
+    while (!done) {
+      if (signal?.aborted) {
+        reader.cancel();
+        return;
+      }
+
+      const { done: rDone, value } = await reader.read();
+      if (rDone) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let nl: number;
+      while ((nl = buffer.indexOf("\n")) !== -1) {
+        let line = buffer.slice(0, nl);
+        buffer = buffer.slice(nl + 1);
+        if (line.endsWith("\r")) line = line.slice(0, -1);
+        if (!line || line.startsWith(":")) continue;
+        if (!line.startsWith("data: ")) continue;
+        const json = line.slice(6).trim();
+        if (json === "[DONE]") {
+          done = true;
+          break;
+        }
+        try {
+          const parsed = JSON.parse(json);
+          const content = parsed.choices?.[0]?.delta?.content as string | undefined;
+          if (content) onDelta(content);
+        } catch {
+          // partial JSON across chunks — push back and wait for more
+          buffer = line + "\n" + buffer;
+          break;
+        }
+      }
+    }
+
+    onDone();
+  } catch (e) {
+    if (e instanceof Error && e.name === "AbortError") {
+      onError("Message generation stopped");
+    } else {
+      onError(e instanceof Error ? e.message : "Unknown error");
+    }
+  }
+}
+
+export async function generateImage(prompt: string): Promise<{ imageUrl?: string; text?: string; error?: string }> {
+  try {
+    const { data, error } = await supabase.functions.invoke("generate-image", {
+      body: { prompt },
+    });
+    if (error) return { error: error.message };
+    if (data?.error) return { error: data.error };
+    return { imageUrl: data?.imageUrl, text: data?.text };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Image API Error" };
+  }
+}
+
+// Non-streaming chat used by voice call (we want the full reply before TTS).
+export async function sendChat({
+  messages,
+  model,
+  systemPrompt,
+}: {
+  messages: { role: Role; content: string }[];
+  model?: string;
+  systemPrompt?: string;
+}): Promise<{ reply?: string; error?: string }> {
+  try {
+    const { data, error } = await supabase.functions.invoke("chat-once", {
+      body: { messages, model, systemPrompt },
+    });
+    if (error) return { error: error.message };
+    if (data?.error) return { error: data.error };
+    return { reply: data?.reply ?? "" };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Unknown error" };
+  }
+}
+
+// Execute SARVIS system commands on the backend
+export async function executeSarvisCommand(command: string, args: string = ""): Promise<{ output?: string; error?: string; os?: string }> {
+  try {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
+    const resp = await fetch(`${backendUrl}/api/sarvis`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ command, args }),
+    });
+
+    if (!resp.ok) {
+      let errorMsg = `HTTP ${resp.status}`;
+      try {
+        const json = await resp.json();
+        errorMsg = json.error || errorMsg;
+      } catch {
+        // ignore
+      }
+      return { error: errorMsg };
+    }
+
+    const data = await resp.json();
+    if (data.error) {
+      return { error: data.error };
+    }
+
+    return {
+      output: data.output,
+      os: data.os,
+    };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Failed to execute command" };
+  }
+}
+

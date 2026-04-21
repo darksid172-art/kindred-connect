@@ -1,0 +1,319 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* SARVIS AI — multi-theme system */
+
+@layer base {
+  :root {
+    /* LIGHT (default, no class) */
+    --background: 0 0% 100%;
+    --foreground: 0 0% 13%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 13%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 13%;
+
+    --primary: 190 95% 45%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 13%;
+
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 40%;
+
+    --accent: 190 95% 45%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 75% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 90%;
+    --input: 0 0% 92%;
+    --ring: 190 95% 45%;
+
+    --radius: 0.75rem;
+
+    --bubble-user: 190 90% 45%;
+    --bubble-user-foreground: 210 40% 98%;
+    --bubble-ai-foreground: 0 0% 13%;
+
+    --sidebar-background: 0 0% 97%;
+    --sidebar-foreground: 0 0% 20%;
+    --sidebar-primary: 190 95% 45%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 92%;
+    --sidebar-accent-foreground: 0 0% 13%;
+    --sidebar-border: 0 0% 88%;
+    --sidebar-ring: 190 95% 45%;
+
+    --transition-smooth: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    --shadow-soft: 0 2px 12px -4px hsl(0 0% 0% / 0.08);
+    --glow-primary: 0 0 24px hsl(190 95% 55% / 0.4);
+  }
+
+  /* DARK — JARVIS HUD */
+  .dark {
+    --background: 220 40% 6%;
+    --foreground: 190 30% 92%;
+
+    --card: 220 38% 9%;
+    --card-foreground: 190 30% 92%;
+
+    --popover: 220 38% 9%;
+    --popover-foreground: 190 30% 92%;
+
+    --primary: 190 100% 55%;
+    --primary-foreground: 220 40% 6%;
+
+    --secondary: 220 35% 12%;
+    --secondary-foreground: 190 30% 92%;
+
+    --muted: 220 30% 14%;
+    --muted-foreground: 190 15% 65%;
+
+    --accent: 190 100% 55%;
+    --accent-foreground: 220 40% 6%;
+
+    --destructive: 0 80% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 200 40% 18%;
+    --input: 220 35% 14%;
+    --ring: 190 100% 55%;
+
+    --bubble-user: 190 90% 50%;
+    --bubble-user-foreground: 220 40% 8%;
+    --bubble-ai-foreground: 190 30% 92%;
+
+    --sidebar-background: 220 45% 5%;
+    --sidebar-foreground: 190 25% 85%;
+    --sidebar-primary: 190 100% 55%;
+    --sidebar-primary-foreground: 220 40% 6%;
+    --sidebar-accent: 220 38% 12%;
+    --sidebar-accent-foreground: 190 30% 95%;
+    --sidebar-border: 200 40% 14%;
+    --sidebar-ring: 190 100% 55%;
+
+    --shadow-soft: 0 2px 24px -4px hsl(190 100% 50% / 0.18);
+    --glow-primary: 0 0 28px hsl(190 100% 55% / 0.55);
+  }
+
+  /* MINIMALIST — soft warm mono, near-monochrome */
+  .theme-minimalist {
+    --background: 40 18% 96%;
+    --foreground: 0 0% 12%;
+
+    --card: 40 15% 99%;
+    --card-foreground: 0 0% 12%;
+
+    --popover: 40 15% 99%;
+    --popover-foreground: 0 0% 12%;
+
+    --primary: 0 0% 18%;
+    --primary-foreground: 40 18% 97%;
+
+    --secondary: 40 12% 92%;
+    --secondary-foreground: 0 0% 12%;
+
+    --muted: 40 12% 92%;
+    --muted-foreground: 0 0% 38%;
+
+    --accent: 0 0% 25%;
+    --accent-foreground: 40 18% 97%;
+
+    --destructive: 0 60% 45%;
+    --destructive-foreground: 40 18% 97%;
+
+    --border: 40 10% 86%;
+    --input: 40 10% 90%;
+    --ring: 0 0% 30%;
+
+    --bubble-user: 0 0% 18%;
+    --bubble-user-foreground: 40 18% 97%;
+    --bubble-ai-foreground: 0 0% 12%;
+
+    --sidebar-background: 40 15% 94%;
+    --sidebar-foreground: 0 0% 18%;
+    --sidebar-primary: 0 0% 18%;
+    --sidebar-primary-foreground: 40 18% 97%;
+    --sidebar-accent: 40 10% 88%;
+    --sidebar-accent-foreground: 0 0% 12%;
+    --sidebar-border: 40 10% 84%;
+    --sidebar-ring: 0 0% 30%;
+
+    --shadow-soft: 0 1px 8px -2px hsl(0 0% 0% / 0.06);
+    --glow-primary: 0 0 0 transparent;
+  }
+
+  /* NEON AMOLED — pure black + neon green */
+  .theme-amoled {
+    --background: 0 0% 0%;
+    --foreground: 120 100% 90%;
+
+    --card: 0 0% 3%;
+    --card-foreground: 120 100% 90%;
+
+    --popover: 0 0% 3%;
+    --popover-foreground: 120 100% 90%;
+
+    --primary: 120 100% 54%;
+    --primary-foreground: 0 0% 0%;
+
+    --secondary: 0 0% 6%;
+    --secondary-foreground: 120 100% 90%;
+
+    --muted: 0 0% 8%;
+    --muted-foreground: 120 20% 65%;
+
+    --accent: 120 100% 54%;
+    --accent-foreground: 0 0% 0%;
+
+    --destructive: 0 100% 55%;
+    --destructive-foreground: 0 0% 0%;
+
+    --border: 120 30% 14%;
+    --input: 0 0% 6%;
+    --ring: 120 100% 54%;
+
+    --bubble-user: 120 100% 50%;
+    --bubble-user-foreground: 0 0% 0%;
+    --bubble-ai-foreground: 120 100% 90%;
+
+    --sidebar-background: 0 0% 0%;
+    --sidebar-foreground: 120 100% 88%;
+    --sidebar-primary: 120 100% 54%;
+    --sidebar-primary-foreground: 0 0% 0%;
+    --sidebar-accent: 0 0% 6%;
+    --sidebar-accent-foreground: 120 100% 92%;
+    --sidebar-border: 120 30% 12%;
+    --sidebar-ring: 120 100% 54%;
+
+    --shadow-soft: 0 0 18px -2px hsl(120 100% 50% / 0.4);
+    --glow-primary: 0 0 32px hsl(120 100% 50% / 0.7);
+  }
+
+  /* ABSTRACT — bold magenta on deep aubergine */
+  .theme-abstract {
+    --background: 280 60% 8%;
+    --foreground: 320 80% 95%;
+
+    --card: 280 55% 12%;
+    --card-foreground: 320 80% 95%;
+
+    --popover: 280 55% 12%;
+    --popover-foreground: 320 80% 95%;
+
+    --primary: 330 95% 60%;
+    --primary-foreground: 280 60% 8%;
+
+    --secondary: 280 50% 16%;
+    --secondary-foreground: 320 80% 95%;
+
+    --muted: 280 45% 18%;
+    --muted-foreground: 320 30% 75%;
+
+    --accent: 50 100% 60%;
+    --accent-foreground: 280 60% 8%;
+
+    --destructive: 0 90% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 290 40% 25%;
+    --input: 280 50% 16%;
+    --ring: 330 95% 60%;
+
+    --bubble-user: 330 95% 55%;
+    --bubble-user-foreground: 280 60% 8%;
+    --bubble-ai-foreground: 320 80% 95%;
+
+    --sidebar-background: 280 65% 6%;
+    --sidebar-foreground: 320 60% 88%;
+    --sidebar-primary: 330 95% 60%;
+    --sidebar-primary-foreground: 280 60% 8%;
+    --sidebar-accent: 280 55% 14%;
+    --sidebar-accent-foreground: 320 80% 95%;
+    --sidebar-border: 290 40% 22%;
+    --sidebar-ring: 330 95% 60%;
+
+    --shadow-soft: 0 4px 28px -6px hsl(330 95% 50% / 0.35);
+    --glow-primary: 0 0 28px hsl(330 95% 60% / 0.55);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html, body, #root {
+    @apply h-full;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  .dark body {
+    background-image:
+      radial-gradient(1200px 600px at 80% -10%, hsl(190 100% 50% / 0.08), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, hsl(220 100% 50% / 0.08), transparent 60%);
+  }
+
+  .theme-amoled body {
+    background-image:
+      radial-gradient(800px 400px at 50% -10%, hsl(120 100% 40% / 0.08), transparent 60%);
+  }
+
+  .theme-abstract body {
+    background-image:
+      radial-gradient(900px 500px at 90% 0%, hsl(330 95% 55% / 0.18), transparent 60%),
+      radial-gradient(700px 400px at 0% 100%, hsl(50 100% 55% / 0.12), transparent 60%),
+      radial-gradient(600px 400px at 50% 50%, hsl(220 90% 55% / 0.08), transparent 60%);
+  }
+
+  .theme-minimalist body {
+    background-image: none;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 3px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--primary) / 0.5);
+  }
+
+  .pulse-ring {
+    animation: pulse-ring 1.6s cubic-bezier(0.4,0,0.6,1) infinite;
+  }
+
+  .glow-ring {
+    box-shadow: var(--glow-primary);
+  }
+
+  .text-glow {
+    text-shadow: 0 0 12px hsl(var(--primary) / 0.6);
+  }
+
+  /* Themes that should NOT have heavy glow */
+  .theme-minimalist .text-glow { text-shadow: none; }
+  .theme-minimalist .glow-ring { box-shadow: none; }
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.85); opacity: 0.7; }
+  100% { transform: scale(1.7); opacity: 0; }
+}
