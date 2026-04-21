@@ -56,7 +56,7 @@ export const SettingsDialog = ({
   const [confirmClear, setConfirmClear] = useState(false);
 
   const setTheme = (theme: Theme) => onChange({ ...settings, theme });
-  const setModel = (model: ModelId) => onChange({ ...settings, model });
+  
   const postModelToBackend = async (model: ModelId) => {
     try {
       await fetch((import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001') + '/api/ai-mode', {
