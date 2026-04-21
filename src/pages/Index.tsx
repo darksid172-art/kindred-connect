@@ -496,10 +496,10 @@ const Index = () => {
                 type="button"
                 onClick={() => setSettings({ ...settings, studyMode: false })}
                 className="hidden sm:inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/20 transition-colors"
-                title="Click to exit Study Ur Way mode"
+                title="Click to exit Learn Your Way mode"
               >
                 <GraduationCap className="h-3 w-3" />
-                Study Ur Way
+                Learn Your Way
               </button>
             )}
             <span className="text-xs tracking-widest text-primary/80 text-glow">SARVIS AI</span>
@@ -580,21 +580,26 @@ const Index = () => {
                   <DropdownMenuLabel>Modes</DropdownMenuLabel>
                   <DropdownMenuItem
                     onClick={() => {
+                      // Toggles personalized Learn Your Way mode (uses interests for explanations)
                       const next = !settings.studyMode;
+                      if (next && (!settings.userProfile || !settings.userProfile.setupComplete)) {
+                        setStudyProfileOpen(true);
+                        return;
+                      }
                       setSettings({ ...settings, studyMode: next });
-                      toast.success(next ? "Study Ur Way: ON" : "Study Ur Way: OFF");
+                      toast.success(next ? "Learn Your Way: ON" : "Learn Your Way: OFF");
                     }}
                   >
                     <GraduationCap className="mr-2 h-4 w-4" />
-                    <span className="flex-1">Study Ur Way</span>
+                    <span className="flex-1">Learn Your Way</span>
                     {settings.studyMode && <Check className="h-4 w-4 text-primary" />}
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setLearnOpen(true)}>
-                    <GraduationCap className="mr-2 h-4 w-4" />
-                    Learn Your Way
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    New learning plan…
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuLabel>System (JARVIS)</DropdownMenuLabel>
+                  <DropdownMenuLabel>System</DropdownMenuLabel>
                   <div className="px-2 py-1.5">
                     <p className="mb-1 text-[11px] text-muted-foreground">Target OS</p>
                     <div className="flex gap-1">
