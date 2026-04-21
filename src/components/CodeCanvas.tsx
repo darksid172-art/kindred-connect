@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { SlidePreview, type SlideOutline, type SlideTheme } from "@/components/SlidePreview";
 
 export type CanvasKind = "code" | "pdf" | "pptx" | "video";
 
@@ -21,6 +22,9 @@ export interface CanvasContent {
   speakText?: string;
   // optional audio (for videos)
   audioBase64?: string;
+  // slides preview data
+  outline?: SlideOutline;
+  theme?: SlideTheme;
 }
 
 interface CodeCanvasProps {
