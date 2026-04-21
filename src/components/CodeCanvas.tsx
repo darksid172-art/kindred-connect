@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { SlidePreview, type SlideOutline, type SlideTheme } from "@/components/SlidePreview";
 
 export type CanvasKind = "code" | "pdf" | "pptx" | "video";
 
@@ -21,6 +22,9 @@ export interface CanvasContent {
   speakText?: string;
   // optional audio (for videos)
   audioBase64?: string;
+  // slides preview data
+  outline?: SlideOutline;
+  theme?: SlideTheme;
 }
 
 interface CodeCanvasProps {
@@ -110,7 +114,9 @@ export const CodeCanvas = ({ open, content, onClose }: CodeCanvasProps) => {
       toast.error("Nothing to read aloud");
       return;
     }
-    const utter = new SpeechSynthesisUtterance(speakSource);
+    // Pronounce SARVIS as "service" without altering displayed text
+    const spoken = speakSource.replace(/\bSARVIS\b/gi, "service");
+    const utter = new SpeechSynthesisUtterance(spoken);
     utter.rate = 1;
     utter.pitch = 1;
     utter.onend = () => setSpeaking(false);
@@ -271,22 +277,38 @@ export const CodeCanvas = ({ open, content, onClose }: CodeCanvasProps) => {
         </div>
       )}
 
-      {content.kind === "pptx" && (
+      {content.kind === "pptx" && content.outline && (
+        <div className="flex-1 min-h-0">
+          <SlidePreview
+            outline={content.outline}
+            theme={
+              content.theme ?? {
+                id: "midnight",
+                name: "Midnight Executive",
+                bg: "F5F7FA",
+                titleBg: "1E2761",
+                primary: "1E2761",
+                accent: "06B6D4",
+                body: "1F2937",
+                titleFg: "FFFFFF",
+                fontHead: "Calibri",
+                fontBody: "Calibri",
+                layout: "topbar",
+              }
+            }
+          />
+        </div>
+      )}
+
+      {content.kind === "pptx" && !content.outline && (
         <ScrollArea className="flex-1 scrollbar-thin">
           <div className="p-6 space-y-4">
             <div className="rounded-lg border border-border bg-secondary/40 p-4">
               <p className="text-sm font-medium text-foreground">{content.title}</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                PowerPoint deck ready. Click <strong>Download</strong> to save the .pptx file, then open it in PowerPoint, Keynote, or Google Slides.
+                PowerPoint deck ready. Click <strong>Download</strong> to save the .pptx file.
               </p>
             </div>
-            {content.speakText && (
-              <div className="prose prose-sm max-w-none dark:prose-invert">
-                <pre className="whitespace-pre-wrap rounded-lg border border-border bg-muted/40 p-3 text-[12px] text-foreground">
-                  {content.speakText}
-                </pre>
-              </div>
-            )}
           </div>
         </ScrollArea>
       )}

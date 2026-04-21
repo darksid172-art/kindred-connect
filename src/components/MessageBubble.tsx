@@ -29,9 +29,12 @@ export const MessageBubble = ({ message, streaming, onOpenCanvas }: MessageBubbl
   const handleSpeak = () => {
     // Stop any current speech
     window.speechSynthesis.cancel();
-    
-    // Create a new utterance
-    const utterance = new SpeechSynthesisUtterance(message.content);
+
+    // Replace SARVIS (any case) with "service" so it's pronounced correctly aloud,
+    // without changing the displayed text.
+    const spoken = message.content.replace(/\bSARVIS\b/gi, "service");
+
+    const utterance = new SpeechSynthesisUtterance(spoken);
     window.speechSynthesis.speak(utterance);
   };
 

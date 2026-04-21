@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import type { SlideOutline, SlideTheme } from "@/components/SlidePreview";
 
 export interface GenFileResult {
   title?: string;
@@ -7,6 +8,8 @@ export interface GenFileResult {
   dataBase64?: string;
   speakText?: string;
   audioBase64?: string;
+  outline?: SlideOutline;
+  theme?: SlideTheme;
   error?: string;
 }
 
