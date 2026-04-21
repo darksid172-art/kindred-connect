@@ -110,7 +110,9 @@ export const CodeCanvas = ({ open, content, onClose }: CodeCanvasProps) => {
       toast.error("Nothing to read aloud");
       return;
     }
-    const utter = new SpeechSynthesisUtterance(speakSource);
+    // Pronounce SARVIS as "service" without altering displayed text
+    const spoken = speakSource.replace(/\bSARVIS\b/gi, "service");
+    const utter = new SpeechSynthesisUtterance(spoken);
     utter.rate = 1;
     utter.pitch = 1;
     utter.onend = () => setSpeaking(false);
