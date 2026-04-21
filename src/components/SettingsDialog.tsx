@@ -1,0 +1,228 @@
+import { useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  AppSettings,
+  DEFAULT_SYSTEM_PROMPT,
+  MODEL_OPTIONS,
+  THEME_OPTIONS,
+  Theme,
+  ModelId,
+} from "@/lib/settings";
+import { RotateCcw, Trash2, Check } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+interface SettingsDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  settings: AppSettings;
+  onChange: (s: AppSettings) => void;
+  onClearAll: () => void;
+}
+
+export const SettingsDialog = ({
+  open,
+  onOpenChange,
+  settings,
+  onChange,
+  onClearAll,
+}: SettingsDialogProps) => {
+  const [confirmClear, setConfirmClear] = useState(false);
+
+  const setTheme = (theme: Theme) => onChange({ ...settings, theme });
+  const setModel = (model: ModelId) => onChange({ ...settings, model });
+  const postModelToBackend = async (model: ModelId) => {
+    try {
+      await fetch((import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001') + '/api/ai-mode', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'online', model })
+      });
+    } catch (e) {
+      // ignore
+    }
+  };
+  const setModel = (model: ModelId) => { onChange({ ...settings, model }); postModelToBackend(model); };
+  const setPrompt = (systemPrompt: string) => onChange({ ...settings, systemPrompt });
+
+  return (
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto scrollbar-thin">
+          <DialogHeader>
+            <DialogTitle>Settings</DialogTitle>
+            <DialogDescription>
+              Personalize SARVIS. Changes save automatically.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6 py-2">
+            {/* Theme */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Theme</Label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {THEME_OPTIONS.map((opt) => {
+                  const active = settings.theme === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setTheme(opt.value)}
+                      className={cn(
+                        "group relative flex flex-col gap-2 rounded-lg border p-2 text-left transition-all",
+                        active
+                          ? "border-primary ring-2 ring-primary/30"
+                          : "border-border hover:border-foreground/30",
+                      )}
+                    >
+                      <div
+                        className="h-12 w-full overflow-hidden rounded-md border border-border"
+                        style={{ background: opt.preview.bg }}
+                      >
+                        <div className="flex h-full items-center gap-1.5 px-2">
+                          <span
+                            className="h-2.5 w-2.5 rounded-full"
+                            style={{ background: opt.preview.accent }}
+                          />
+                          <span
+                            className="h-1 flex-1 rounded-full opacity-50"
+                            style={{ background: opt.preview.fg }}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1 text-xs font-medium text-foreground">
+                          {opt.label}
+                          {active && <Check className="h-3 w-3 text-primary" />}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground">{opt.hint}</div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Model */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">AI Model</Label>
+              <Select value={settings.model} onValueChange={(v) => setModel(v as ModelId)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MODEL_OPTIONS.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>
+                      <div className="flex items-center gap-2">
+                        <span>{m.label}</span>
+                        <span className="text-xs text-muted-foreground">· {m.hint}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* System prompt */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">Custom Instructions</Label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setPrompt(DEFAULT_SYSTEM_PROMPT)}
+                  className="h-7 gap-1 text-xs"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  Reset
+                </Button>
+              </div>
+              <Textarea
+                value={settings.systemPrompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                rows={5}
+                className="text-sm resize-none"
+                placeholder="How should SARVIS behave?"
+              />
+              <p className="text-xs text-muted-foreground">
+                Tell SARVIS your preferred tone, expertise level, or any rules to follow.
+                Note: when "Study Ur Way" is on, the study tutor prompt is used instead.
+              </p>
+            </div>
+
+            {/* Danger zone */}
+            <div className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+              <Label className="text-sm font-medium text-destructive">Danger zone</Label>
+              <p className="text-xs text-muted-foreground">
+                Permanently delete all of your conversations from this device.
+              </p>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                onClick={() => setConfirmClear(true)}
+                className="gap-2"
+              >
+                <Trash2 className="h-4 w-4" />
+                Clear all chats
+              </Button>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button onClick={() => onOpenChange(false)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={confirmClear} onOpenChange={setConfirmClear}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear all chats?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete every conversation stored on this device.
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                onClearAll();
+                setConfirmClear(false);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete everything
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+};
