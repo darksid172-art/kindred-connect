@@ -419,7 +419,10 @@ const Index = () => {
     }
 
     const canvasKind = kind === "pdf" ? "pdf" : kind === "pptx" ? "pptx" : "video";
-    const display = `Done. Opened ${label.toLowerCase()} in the canvas — tap **Download** to save.`;
+    const display =
+      kind === "pptx"
+        ? `Your **${result.title ?? label}** slide deck is ready — preview it on the right. Tap **Download** to save the .pptx.`
+        : `Done. Opened ${label.toLowerCase()} in the canvas — tap **Download** to save.`;
     updateMessageContent(chatId, placeholder.id, () => display);
     handleOpenCanvas({
       kind: canvasKind,
@@ -428,6 +431,8 @@ const Index = () => {
       mimeType: result.mimeType,
       dataBase64: result.dataBase64,
       speakText: result.speakText,
+      outline: result.outline,
+      theme: result.theme,
     });
     toast.success(`${label} ready`);
   };
