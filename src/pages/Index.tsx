@@ -361,6 +361,117 @@ const Index = () => {
       return;
     }
 
+    // ---- Nearby places (Maps) ----
+    const nearbyIntent = parseNearbyIntent(text);
+    if (nearbyIntent.isNearby) {
+      const placeholder = newMessage("assistant", "");
+      appendMessage(chatId, placeholder);
+      setStreamingId(placeholder.id);
+
+      try {
+        const coords = await new Promise<{ lat: number; lon: number }>((resolve, reject) => {
+          if (!navigator.geolocation) return reject(new Error("Geolocation unsupported"));
+          navigator.geolocation.getCurrentPosition(
+            (p) => resolve({ lat: p.coords.latitude, lon: p.coords.longitude }),
+            (e) => reject(new Error(e.message)),
+            { enableHighAccuracy: true, timeout: 10000 },
+          );
+        });
+        const r = await findNearby({ lat: coords.lat, lon: coords.lon, category: nearbyIntent.category, radius: 1500 });
+        setStreamingId(null);
+        if (r.error || !r.places) {
+          updateMessageContent(chatId, placeholder.id, () => `Couldn't search nearby: ${r.error ?? "no results"}`);
+        } else {
+          updateMessageContent(
+            chatId,
+            placeholder.id,
+            () => `Found ${r.places.length} ${nearbyIntent.category} near you:`,
+            { nearby: { category: nearbyIntent.category, center: r.center!, radius: r.radius ?? 1500, places: r.places } },
+          );
+        }
+      } catch (err) {
+        setStreamingId(null);
+        const msg = err instanceof Error ? err.message : "Location unavailable";
+        updateMessageContent(chatId, placeholder.id, () => `Location error: ${msg}. Please allow browser location access.`);
+        toast.error(msg);
+      }
+      setBusy(false);
+      return;
+    }
+
+    // ---- Calendar ----
+    if (parseCalendarIntent(text)) {
+      const placeholder = newMessage("assistant", "");
+      appendMessage(chatId, placeholder);
+      setStreamingId(placeholder.id);
+      const r = await listCalendar(14);
+      setStreamingId(null);
+      if (r.error) {
+        updateMessageContent(chatId, placeholder.id, () => `Calendar error: ${r.error}`);
+      } else if (!r.events || r.events.length === 0) {
+        updateMessageContent(chatId, placeholder.id, () => "You have no upcoming events in the next 14 days. Open the [Dashboard](/dashboard) to add a reminder.");
+      } else {
+        const lines = r.events
+          .slice(0, 8)
+          .map((e) => `- **${e.summary}** — ${new Date(e.start).toLocaleString()}${e.location ? ` · ${e.location}` : ""}`)
+          .join("\n");
+        updateMessageContent(
+          chatId,
+          placeholder.id,
+          () => `Here's your upcoming agenda:\n\n${lines}\n\nOpen the [Dashboard](/dashboard) to add a reminder.`,
+        );
+      }
+      setBusy(false);
+      return;
+    }
+
+    // ---- Gmail ----
+    if (parseGmailIntent(text)) {
+      const placeholder = newMessage("assistant", "");
+      appendMessage(chatId, placeholder);
+      setStreamingId(placeholder.id);
+      const r = await listGmail(8);
+      setStreamingId(null);
+      if (r.error) {
+        updateMessageContent(chatId, placeholder.id, () => `Gmail error: ${r.error}`);
+      } else if (!r.messages || r.messages.length === 0) {
+        updateMessageContent(chatId, placeholder.id, () => "Your inbox is empty.");
+      } else {
+        const lines = r.messages
+          .map((m) => `- ${m.unread ? "🔵 " : ""}**${m.from.split("<")[0].trim()}** — ${m.subject}`)
+          .join("\n");
+        updateMessageContent(chatId, placeholder.id, () => `Here are your recent emails:\n\n${lines}`);
+      }
+      setBusy(false);
+      return;
+    }
+
+    // ---- Drive ----
+    if (parseDriveIntent(text)) {
+      const placeholder = newMessage("assistant", "");
+      appendMessage(chatId, placeholder);
+      setStreamingId(placeholder.id);
+      const r = await listDrive();
+      setStreamingId(null);
+      if (r.error) {
+        updateMessageContent(chatId, placeholder.id, () => `Drive error: ${r.error}`);
+      } else if (!r.files || r.files.length === 0) {
+        updateMessageContent(chatId, placeholder.id, () => "Your Drive is empty.");
+      } else {
+        const lines = r.files
+          .slice(0, 10)
+          .map((f) => `- [${f.name}](${f.webViewLink ?? "#"})`)
+          .join("\n");
+        updateMessageContent(
+          chatId,
+          placeholder.id,
+          () => `Recent files in your Drive:\n\n${lines}\n\nOpen the [Dashboard](/dashboard) to upload from your PC.`,
+        );
+      }
+      setBusy(false);
+      return;
+    }
+
     if (isImageRequest(text)) {
       const placeholder = newMessage("assistant", "");
       appendMessage(chatId, placeholder);
