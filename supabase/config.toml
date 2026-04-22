@@ -1,1 +1,16 @@
 project_id = "euwnqqwvazvaekpyavaa"
+
+[functions.google-gmail]
+verify_jwt = false
+
+[functions.google-calendar]
+verify_jwt = false
+
+[functions.google-drive]
+verify_jwt = false
+
+[functions.google-youtube]
+verify_jwt = false
+
+[functions.maps-nearby]
+verify_jwt = false

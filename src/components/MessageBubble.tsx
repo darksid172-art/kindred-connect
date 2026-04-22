@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Code2, Download, Copy, Volume2, Check } from "lucide-react";
 import type { CanvasContent } from "@/components/CodeCanvas";
 import { NewsCards } from "@/components/NewsCards";
+import { NearbyMap } from "@/components/NearbyMap";
 import { useState } from "react";
 import { toast } from "sonner";
 import { speakWithMaleVoice } from "@/lib/voice";
@@ -88,6 +89,14 @@ export const MessageBubble = ({ message, streaming, onOpenCanvas }: MessageBubbl
         )}
         {message.news && (
           <NewsCards articles={message.news.articles} query={message.news.query} />
+        )}
+        {message.nearby && (
+          <NearbyMap
+            center={message.nearby.center}
+            radius={message.nearby.radius}
+            places={message.nearby.places}
+            category={message.nearby.category}
+          />
         )}
         {displayContent && (
           <div className="group relative">
