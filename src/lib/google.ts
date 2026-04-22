@@ -161,10 +161,7 @@ export async function findNearby(input: {
   if (data?.error) return { error: data.error };
   return data;
 }
-  if (error) return { error: error.message };
-  if (data?.error) return { error: data.error };
-  return data;
-}
+
 
 // ---------- Intent parsing for chat ----------
 export function parseNearbyIntent(text: string): { isNearby: boolean; category: string } {
