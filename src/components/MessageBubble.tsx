@@ -182,7 +182,7 @@ export const MessageBubble = ({ message, streaming, onOpenCanvas }: MessageBubbl
             </div>
           </div>
         )}
-        {!message.content && streaming && (
+        {!message.content && !message.news && streaming && (
           <div className="flex items-center gap-1.5 pt-1">
             <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground" style={{ animationDelay: "0ms" }} />
             <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground" style={{ animationDelay: "150ms" }} />
