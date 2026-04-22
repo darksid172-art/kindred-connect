@@ -155,8 +155,12 @@ export async function findNearby(input: {
   lon: number;
   category: string;
   radius?: number;
-}): Promise<{ center?: { lat: number; lon: number }; category?: string; places?: NearbyPlace[]; error?: string }> {
+}): Promise<{ center?: { lat: number; lon: number }; category?: string; radius?: number; places?: NearbyPlace[]; error?: string }> {
   const { data, error } = await supabase.functions.invoke("maps-nearby", { body: input });
+  if (error) return { error: error.message };
+  if (data?.error) return { error: data.error };
+  return data;
+}
   if (error) return { error: error.message };
   if (data?.error) return { error: data.error };
   return data;
