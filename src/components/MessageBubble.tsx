@@ -86,6 +86,9 @@ export const MessageBubble = ({ message, streaming, onOpenCanvas }: MessageBubbl
             </Button>
           </div>
         )}
+        {message.news && (
+          <NewsCards articles={message.news.articles} query={message.news.query} />
+        )}
         {displayContent && (
           <div className="group relative">
             <div
