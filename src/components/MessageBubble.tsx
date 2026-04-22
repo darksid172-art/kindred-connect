@@ -85,7 +85,7 @@ export const MessageBubble = ({ message, streaming, onOpenCanvas }: MessageBubbl
             </Button>
           </div>
         )}
-        {message.content && (
+        {displayContent && (
           <div className="group relative">
             <div
               className={cn(
@@ -148,7 +148,7 @@ export const MessageBubble = ({ message, streaming, onOpenCanvas }: MessageBubbl
                   },
                 }}
               >
-                {message.content}
+                {displayContent}
               </ReactMarkdown>
               {streaming && (
                 <span className="ml-0.5 inline-block h-4 w-1 animate-pulse rounded-sm bg-foreground align-middle" />
