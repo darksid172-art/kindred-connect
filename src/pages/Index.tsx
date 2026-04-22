@@ -658,6 +658,12 @@ const Index = () => {
                 Learn Your Way
               </button>
             )}
+            <Button asChild variant="ghost" size="sm" className="h-8 gap-1.5 px-2">
+              <Link to="/dashboard" aria-label="Open dashboard">
+                <LayoutDashboard className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Dashboard</span>
+              </Link>
+            </Button>
             <span className="text-xs tracking-widest text-primary/80 text-glow">SARVIS AI</span>
           </div>
         </header>
