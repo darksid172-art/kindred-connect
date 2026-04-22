@@ -6,6 +6,7 @@ import sarvisLogo from "@/assets/sarvis-logo.png";
 import { Button } from "@/components/ui/button";
 import { Code2, Download, Copy, Volume2, Check } from "lucide-react";
 import type { CanvasContent } from "@/components/CodeCanvas";
+import { NewsCards } from "@/components/NewsCards";
 import { useState } from "react";
 import { toast } from "sonner";
 import { speakWithMaleVoice } from "@/lib/voice";
