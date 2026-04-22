@@ -8,6 +8,7 @@ import { Code2, Download, Copy, Volume2, Check } from "lucide-react";
 import type { CanvasContent } from "@/components/CodeCanvas";
 import { useState } from "react";
 import { toast } from "sonner";
+import { speakWithMaleVoice } from "@/lib/voice";
 
 interface MessageBubbleProps {
   message: Message;
@@ -27,15 +28,8 @@ export const MessageBubble = ({ message, streaming, onOpenCanvas }: MessageBubbl
   };
 
   const handleSpeak = () => {
-    // Stop any current speech
-    window.speechSynthesis.cancel();
-
-    // Replace SARVIS (any case) with "service" so it's pronounced correctly aloud,
-    // without changing the displayed text.
-    const spoken = message.content.replace(/\bSARVIS\b/gi, "service");
-
-    const utterance = new SpeechSynthesisUtterance(spoken);
-    window.speechSynthesis.speak(utterance);
+    // Use shared deep male voice; helper also rewrites SARVIS -> "service".
+    void speakWithMaleVoice(message.content);
   };
 
   if (isUser) {

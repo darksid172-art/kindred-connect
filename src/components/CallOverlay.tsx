@@ -5,6 +5,7 @@ import { sendChat, type Message } from "@/lib/sarvis";
 import type { AppSettings } from "@/lib/settings";
 import { cn } from "@/lib/utils";
 import sarvisLogo from "@/assets/sarvis-logo.png";
+import { speakWithMaleVoice } from "@/lib/voice";
 
 interface CallOverlayProps {
   open: boolean;
@@ -69,75 +70,10 @@ export const CallOverlay = ({ open, onHangup, history, settings, onTurnComplete 
     finalTextRef.current = "";
   };
 
-  const pickJarvisVoice = (): SpeechSynthesisVoice | null => {
-    const voices = window.speechSynthesis.getVoices();
-    if (!voices || voices.length === 0) return null;
-    // Strong male English voice preferences (JARVIS-like)
-    const malePatterns = [
-      /Google UK English Male/i,
-      /Microsoft Guy/i,
-      /Microsoft Ryan/i,
-      /Microsoft George/i,
-      /Microsoft Davis/i,
-      /Microsoft Mark/i,
-      /Microsoft David/i,
-      /Daniel/i,            // macOS UK male
-      /Alex/i,              // macOS US male
-      /Oliver/i,
-      /Arthur/i,
-      /Fred/i,
-    ];
-    for (const re of malePatterns) {
-      const match = voices.find((v) => re.test(v.name) && /^en/i.test(v.lang));
-      if (match) return match;
-    }
-    // Fallback: any english voice whose name suggests male
-    const anyMale = voices.find((v) => /^en/i.test(v.lang) && /(male|guy|man|ryan|george|davis|mark|david|daniel|alex|oliver|arthur|fred)/i.test(v.name));
-    if (anyMale) return anyMale;
-    // Final fallback: first English voice
-    return voices.find((v) => /^en/i.test(v.lang)) ?? voices[0];
-  };
-
   const speak = (text: string): Promise<void> => {
-    return new Promise((resolve) => {
-      if (!audioOnRef.current || !text.trim() || !window.speechSynthesis) {
-        resolve();
-        return;
-      }
-      const doSpeak = () => {
-        try {
-          window.speechSynthesis.cancel();
-          const utter = new SpeechSynthesisUtterance(text);
-          utter.rate = 0.95;
-          utter.pitch = 0.7; // lower pitch for a deeper, JARVIS-like tone
-          utter.volume = 1.0;
-          const voice = pickJarvisVoice();
-          if (voice) {
-            utter.voice = voice;
-            utter.lang = voice.lang;
-          } else {
-            utter.lang = "en-GB";
-          }
-          utter.onend = () => resolve();
-          utter.onerror = () => resolve();
-          window.speechSynthesis.speak(utter);
-        } catch {
-          resolve();
-        }
-      };
-      // Voices may not be loaded yet on first call
-      if (window.speechSynthesis.getVoices().length === 0) {
-        const handler = () => {
-          window.speechSynthesis.removeEventListener("voiceschanged", handler);
-          doSpeak();
-        };
-        window.speechSynthesis.addEventListener("voiceschanged", handler);
-        // Safety timeout
-        setTimeout(doSpeak, 400);
-      } else {
-        doSpeak();
-      }
-    });
+    if (!audioOnRef.current) return Promise.resolve();
+    // Shared helper: deep male voice, pronounces "SARVIS" as "service".
+    return speakWithMaleVoice(text);
   };
 
   const startListening = () => {
