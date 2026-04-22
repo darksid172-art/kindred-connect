@@ -5,6 +5,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { SlidePreview, type SlideOutline, type SlideTheme } from "@/components/SlidePreview";
+import { speakWithMaleVoice, speakableText } from "@/lib/voice";
 
 export type CanvasKind = "code" | "pdf" | "pptx" | "video";
 
@@ -110,21 +111,12 @@ export const CodeCanvas = ({ open, content, onClose }: CodeCanvasProps) => {
       setSpeaking(false);
       return;
     }
-    if (!speakSource.trim()) {
+    if (!speakableText(speakSource).trim()) {
       toast.error("Nothing to read aloud");
       return;
     }
-    // Pronounce SARVIS as "service" without altering displayed text
-    const spoken = speakSource.replace(/\bSARVIS\b/gi, "service");
-    const utter = new SpeechSynthesisUtterance(spoken);
-    utter.rate = 1;
-    utter.pitch = 1;
-    utter.onend = () => setSpeaking(false);
-    utter.onerror = () => setSpeaking(false);
-    utteranceRef.current = utter;
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(utter);
     setSpeaking(true);
+    void speakWithMaleVoice(speakSource).finally(() => setSpeaking(false));
   };
 
   const handleCopy = async () => {
