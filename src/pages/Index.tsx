@@ -433,6 +433,9 @@ const Index = () => {
       speakText: result.speakText,
       outline: result.outline,
       theme: result.theme,
+      videoFrames: result.videoFrames,
+      narration: result.narration,
+      secondsPerFrame: result.secondsPerFrame,
     });
     toast.success(`${label} ready`);
   };

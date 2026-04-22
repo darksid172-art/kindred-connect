@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { X, Copy, Volume2, Square, Check, Code as CodeIcon, Download, FileText, Presentation, Film } from "lucide-react";
+import { X, Copy, Volume2, Square, Check, Code as CodeIcon, Download, FileText, Presentation, Film, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { SlidePreview, type SlideOutline, type SlideTheme } from "@/components/SlidePreview";
+import { speakWithMaleVoice, speakableText } from "@/lib/voice";
+import { stitchVideo, type VideoFrame } from "@/lib/videoStitch";
 
 export type CanvasKind = "code" | "pdf" | "pptx" | "video";
 
@@ -25,6 +27,10 @@ export interface CanvasContent {
   // slides preview data
   outline?: SlideOutline;
   theme?: SlideTheme;
+  // video stitching inputs
+  videoFrames?: VideoFrame[];
+  narration?: string;
+  secondsPerFrame?: number;
 }
 
 interface CodeCanvasProps {
@@ -53,6 +59,10 @@ export const CodeCanvas = ({ open, content, onClose }: CodeCanvasProps) => {
   const [copied, setCopied] = useState(false);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [videoFilename, setVideoFilename] = useState<string>("sarvis-video.webm");
+  const [stitching, setStitching] = useState(false);
+  const [stitchStep, setStitchStep] = useState<string>("");
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -82,6 +92,42 @@ export const CodeCanvas = ({ open, content, onClose }: CodeCanvasProps) => {
     }
   }, [content?.audioBase64]);
 
+  // Stitch a real video file from frames + narration when the canvas opens with video frames
+  useEffect(() => {
+    let cancelled = false;
+    let createdUrl: string | null = null;
+    if (content?.kind === "video" && content.videoFrames && content.videoFrames.length > 0) {
+      setStitching(true);
+      setStitchStep("Preparing…");
+      stitchVideo({
+        frames: content.videoFrames,
+        narration: content.narration ?? "",
+        secondsPerFrame: content.secondsPerFrame ?? 3,
+        onProgress: (s) => !cancelled && setStitchStep(s),
+      })
+        .then((res) => {
+          if (cancelled) {
+            URL.revokeObjectURL(res.url);
+            return;
+          }
+          createdUrl = res.url;
+          setVideoUrl(res.url);
+          setVideoFilename(res.filename);
+        })
+        .catch((e) => {
+          console.error("video stitch error", e);
+          if (!cancelled) toast.error(e instanceof Error ? e.message : "Failed to render video");
+        })
+        .finally(() => !cancelled && setStitching(false));
+    } else {
+      setVideoUrl(null);
+    }
+    return () => {
+      cancelled = true;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [content]);
+
   useEffect(() => {
     return () => {
       try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
@@ -110,21 +156,12 @@ export const CodeCanvas = ({ open, content, onClose }: CodeCanvasProps) => {
       setSpeaking(false);
       return;
     }
-    if (!speakSource.trim()) {
+    if (!speakableText(speakSource).trim()) {
       toast.error("Nothing to read aloud");
       return;
     }
-    // Pronounce SARVIS as "service" without altering displayed text
-    const spoken = speakSource.replace(/\bSARVIS\b/gi, "service");
-    const utter = new SpeechSynthesisUtterance(spoken);
-    utter.rate = 1;
-    utter.pitch = 1;
-    utter.onend = () => setSpeaking(false);
-    utter.onerror = () => setSpeaking(false);
-    utteranceRef.current = utter;
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(utter);
     setSpeaking(true);
+    void speakWithMaleVoice(speakSource).finally(() => setSpeaking(false));
   };
 
   const handleCopy = async () => {
@@ -139,10 +176,13 @@ export const CodeCanvas = ({ open, content, onClose }: CodeCanvasProps) => {
   };
 
   const handleDownload = () => {
-    if (!blobUrl || !content.filename) return;
+    // Prefer the stitched video URL if it exists, otherwise the file blob
+    const url = videoUrl ?? blobUrl;
+    const name = videoUrl ? videoFilename : content.filename;
+    if (!url || !name) return;
     const a = document.createElement("a");
-    a.href = blobUrl;
-    a.download = content.filename;
+    a.href = url;
+    a.download = name;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -236,7 +276,7 @@ export const CodeCanvas = ({ open, content, onClose }: CodeCanvasProps) => {
               <span className="hidden sm:inline text-xs">{copied ? "Copied" : "Copy"}</span>
             </Button>
           )}
-          {blobUrl && (
+          {(blobUrl || videoUrl) && (
             <Button
               type="button"
               variant="ghost"
@@ -313,22 +353,25 @@ export const CodeCanvas = ({ open, content, onClose }: CodeCanvasProps) => {
         </ScrollArea>
       )}
 
-      {content.kind === "video" && blobUrl && (
-        <div className="flex-1 flex flex-col items-center justify-center bg-black">
-          <img src={blobUrl} alt={content.title ?? "video"} className="max-h-full max-w-full" />
-          {audioBlobUrl && (
-            <div className="w-full bg-secondary/80 border-t border-border p-4">
-              <div className="max-w-full mx-auto">
-                <p className="text-xs text-muted-foreground mb-2">🎤 Narration</p>
-                <audio
-                  ref={audioRef}
-                  src={audioBlobUrl}
-                  controls
-                  className="w-full"
-                  autoPlay={false}
-                />
-              </div>
+      {content.kind === "video" && (
+        <div className="flex-1 flex flex-col items-center justify-center bg-black p-4">
+          {stitching && (
+            <div className="flex flex-col items-center gap-3 text-white/80">
+              <Loader2 className="h-8 w-8 animate-spin" />
+              <p className="text-sm">{stitchStep || "Rendering video…"}</p>
+              <p className="text-xs text-white/50">Searching the web for images, recording frames…</p>
             </div>
+          )}
+          {!stitching && videoUrl && (
+            <video
+              src={videoUrl}
+              controls
+              autoPlay
+              className="max-h-full max-w-full rounded"
+            />
+          )}
+          {!stitching && !videoUrl && (
+            <p className="text-sm text-white/60">No video available.</p>
           )}
         </div>
       )}

@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { SlideOutline, SlideTheme } from "@/components/SlidePreview";
+import type { VideoFrame } from "@/lib/videoStitch";
 
 export interface GenFileResult {
   title?: string;
@@ -10,6 +11,10 @@ export interface GenFileResult {
   audioBase64?: string;
   outline?: SlideOutline;
   theme?: SlideTheme;
+  // Video-specific: raw frames + narration the frontend will stitch into a real video file
+  videoFrames?: VideoFrame[];
+  narration?: string;
+  secondsPerFrame?: number;
   error?: string;
 }
 
@@ -33,7 +38,6 @@ export async function generateSlides(topic: string, model?: string): Promise<Gen
     });
     if (error) return { error: error.message };
     if (data?.error) return { error: data.error };
-    // Build a speakable summary from the outline
     let speakText = "";
     if (data?.outline) {
       speakText = `${data.outline.title}. `;
@@ -55,39 +59,14 @@ export async function generateVideo(prompt: string, model?: string): Promise<Gen
     });
     if (error) return { error: error.message };
     if (data?.error) return { error: data.error };
-    let speakText = "";
-    if (Array.isArray(data?.frames)) {
-      speakText = data.frames
-        .map((f: { headline?: string; sub?: string }) => `${f.headline ?? ""}. ${f.sub ?? ""}`)
-        .join(" ");
-    }
-    
-    // Generate Jarvis-like audio narration for the video
-    let audioBase64 = "";
-    if (speakText) {
-      try {
-        const ttsResult = await generateTTS(speakText);
-        audioBase64 = ttsResult.audioBase64 || "";
-      } catch (e) {
-        console.warn("TTS generation failed, video will play without audio:", e);
-      }
-    }
-    
-    return { ...data, speakText, audioBase64 } as GenFileResult;
+    return {
+      title: data?.title,
+      videoFrames: data?.frames ?? [],
+      narration: data?.narration ?? "",
+      secondsPerFrame: data?.secondsPerFrame ?? 3,
+      speakText: data?.narration ?? "",
+    };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Video generation failed" };
-  }
-}
-
-export async function generateTTS(text: string): Promise<{ audioBase64: string }> {
-  try {
-    const { data, error } = await supabase.functions.invoke("generate-tts", {
-      body: { text },
-    });
-    if (error) return { audioBase64: "" };
-    return { audioBase64: data?.audioBase64 || "" };
-  } catch (e) {
-    console.warn("TTS API call failed:", e);
-    return { audioBase64: "" };
   }
 }

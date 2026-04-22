@@ -1,3 +1,18 @@
+/**
+ * Generate-video: returns the raw building blocks the frontend needs to
+ * stitch a REAL video file (images + narration audio) — instead of an
+ * animated SVG.
+ *
+ * Flow:
+ *  1. Use Lovable AI Gateway to plan a 5-frame storyboard (headline + sub
+ *     for each frame, plus a tightly focused image search query per frame).
+ *  2. Fetch a high-quality image per frame from Wikipedia's REST search API
+ *     (no API key needed, returns Commons / public-domain images).
+ *  3. Return everything as JSON. The frontend renders frames onto a Canvas,
+ *     records via MediaRecorder, mixes the narration audio, and produces a
+ *     downloadable .webm video file.
+ */
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -6,31 +21,25 @@ const corsHeaders = {
 
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 
-/**
- * Lovable AI Gateway does not (yet) expose a hosted text-to-video model.
- * We fall back to generating an animated SVG "story" (5 frames, 1s each)
- * encoded as an animated SMIL/SVG that can play in any browser. This gives
- * the user something tangible while keeping zero cost / zero extra deps.
- *
- * The AI is asked to design 5 frames (background color + headline + sub).
- * Each frame fades in/out using SMIL. The result is wrapped in an .svg file
- * which most modern browsers play natively as an animated graphic.
- */
-
 interface VideoBody {
   prompt: string;
   model?: string;
 }
 
-interface Frame {
-  bg: string;
+interface PlannedFrame {
+  headline: string;
+  sub: string;
+  imageQuery: string;
+  bg: string; // fallback background hex
   fg: string;
   accent: string;
-  headline: string;
-  sub?: string;
 }
 
-async function generateStoryboard(prompt: string, model: string): Promise<Frame[]> {
+interface RenderFrame extends PlannedFrame {
+  imageUrl: string | null;
+}
+
+async function planStoryboard(prompt: string, model: string): Promise<PlannedFrame[]> {
   const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -43,7 +52,7 @@ async function generateStoryboard(prompt: string, model: string): Promise<Frame[
         {
           role: "system",
           content:
-            'You design 5-frame animated story videos. Reply ONLY with strict JSON: {"frames":[{"bg":"#hex","fg":"#hex","accent":"#hex","headline":"...", "sub":"..."}]}. Exactly 5 frames. Headline max 40 chars, sub max 70 chars. Choose vivid, on-topic colors.',
+            'You design 5-frame educational video storyboards. Reply ONLY with strict JSON: {"frames":[{"headline":"...","sub":"...","imageQuery":"...","bg":"#hex","fg":"#hex","accent":"#hex"}]}. Exactly 5 frames. headline max 50 chars, sub max 90 chars. imageQuery is a SHORT (2-4 words) Wikipedia-friendly noun phrase that visually represents the frame (e.g. "Eiffel Tower", "Solar panel", "Mount Fuji"). Pick vivid, on-topic colors as fallback if no image is found.',
         },
         { role: "user", content: `Storyboard for: ${prompt}` },
       ],
@@ -54,51 +63,69 @@ async function generateStoryboard(prompt: string, model: string): Promise<Frame[
   const json = await res.json();
   const content = json.choices?.[0]?.message?.content ?? "{}";
   const parsed = JSON.parse(content);
-  const frames: Frame[] = parsed.frames ?? [];
+  const frames: PlannedFrame[] = parsed.frames ?? [];
   if (frames.length < 1) throw new Error("Model returned no frames");
   return frames.slice(0, 5);
 }
 
-function escapeXml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
+/**
+ * Find a representative image for a query via Wikipedia's REST API.
+ * Tries page summary first (returns a hero image) — falls back to null.
+ */
+async function findImageForQuery(query: string): Promise<string | null> {
+  const cleaned = query.trim().slice(0, 120);
+  if (!cleaned) return null;
+  try {
+    // Step 1: search for matching page title
+    const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
+      cleaned,
+    )}&format=json&origin=*&srlimit=1`;
+    const sRes = await fetch(searchUrl);
+    if (!sRes.ok) return null;
+    const sJson = await sRes.json();
+    const title: string | undefined = sJson?.query?.search?.[0]?.title;
+    if (!title) return null;
+
+    // Step 2: pull page summary which includes a thumbnail / originalimage
+    const sumUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(
+      title,
+    )}`;
+    const pRes = await fetch(sumUrl, {
+      headers: { "User-Agent": "SARVIS/1.0 (lovable.app)" },
+    });
+    if (!pRes.ok) return null;
+    const pJson = await pRes.json();
+    const url: string | undefined =
+      pJson?.originalimage?.source ?? pJson?.thumbnail?.source;
+    return url ?? null;
+  } catch (e) {
+    console.warn("image lookup failed for", query, e);
+    return null;
+  }
 }
 
-function buildAnimatedSvg(frames: Frame[]): string {
-  const W = 1280;
-  const H = 720;
-  const FRAME_DUR = 2; // seconds per frame
-  const TOTAL = frames.length * FRAME_DUR;
-
-  const groups = frames
-    .map((f, i) => {
-      const begin = i * FRAME_DUR;
-      const headline = escapeXml(f.headline ?? "");
-      const sub = escapeXml(f.sub ?? "");
-      return `
-        <g opacity="0">
-          <rect width="${W}" height="${H}" fill="${f.bg}"/>
-          <rect x="80" y="${H - 90}" width="120" height="6" fill="${f.accent}"/>
-          <text x="80" y="${H / 2 - 20}" font-family="Inter, Arial, sans-serif" font-size="68" font-weight="800" fill="${f.fg}">${headline}</text>
-          <text x="80" y="${H / 2 + 40}" font-family="Inter, Arial, sans-serif" font-size="28" fill="${f.accent}">${sub}</text>
-          <text x="${W - 220}" y="${H - 60}" font-family="Inter, Arial, sans-serif" font-size="16" fill="${f.fg}" opacity="0.5">SARVIS · ${i + 1}/${frames.length}</text>
-          <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1"
-            dur="${FRAME_DUR}s" begin="${begin}s" fill="freeze" repeatCount="indefinite" />
-        </g>`;
-    })
-    .join("\n");
-
-  // Loop the whole thing by using indefinite repetition on each frame group.
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
-  <rect width="${W}" height="${H}" fill="${frames[0].bg}"/>
-  ${groups}
-  <!-- total ${TOTAL}s loop -->
-</svg>`;
+async function generateNarration(prompt: string, model: string): Promise<string> {
+  const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${LOVABLE_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        {
+          role: "system",
+          content:
+            "Write a short, conversational narration script (3-5 sentences, ~50-70 words) for a 10-second educational video. Plain text only — no markdown, no bullets, no stage directions.",
+        },
+        { role: "user", content: `Topic: ${prompt}` },
+      ],
+    }),
+  });
+  if (!res.ok) return "";
+  const json = await res.json();
+  return (json.choices?.[0]?.message?.content ?? "").trim();
 }
 
 Deno.serve(async (req) => {
@@ -112,16 +139,30 @@ Deno.serve(async (req) => {
       });
     }
     const model = body.model ?? "google/gemini-2.5-flash";
-    const frames = await generateStoryboard(body.prompt, model);
-    const svg = buildAnimatedSvg(frames);
-    const b64 = btoa(unescape(encodeURIComponent(svg)));
+
+    // 1. Plan storyboard
+    const planned = await planStoryboard(body.prompt, model);
+
+    // 2. Resolve images in parallel
+    const withImages: RenderFrame[] = await Promise.all(
+      planned.map(async (f) => ({
+        ...f,
+        imageUrl: await findImageForQuery(f.imageQuery || f.headline),
+      })),
+    );
+
+    // 3. Narration
+    const narration = await generateNarration(body.prompt, model);
+
     return new Response(
       JSON.stringify({
-        mimeType: "image/svg+xml",
-        filename: `sarvis-video-${Date.now()}.svg`,
-        dataBase64: b64,
-        frames,
-        note: "Animated SVG story (loops). Plays inline in any browser.",
+        kind: "video",
+        title: `Video · ${body.prompt}`.slice(0, 80),
+        frames: withImages,
+        narration,
+        secondsPerFrame: 3,
+        note:
+          "Frontend will stitch these frames + narration into a real .webm video using Canvas + MediaRecorder.",
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
