@@ -176,10 +176,13 @@ export const CodeCanvas = ({ open, content, onClose }: CodeCanvasProps) => {
   };
 
   const handleDownload = () => {
-    if (!blobUrl || !content.filename) return;
+    // Prefer the stitched video URL if it exists, otherwise the file blob
+    const url = videoUrl ?? blobUrl;
+    const name = videoUrl ? videoFilename : content.filename;
+    if (!url || !name) return;
     const a = document.createElement("a");
-    a.href = blobUrl;
-    a.download = content.filename;
+    a.href = url;
+    a.download = name;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -273,7 +276,7 @@ export const CodeCanvas = ({ open, content, onClose }: CodeCanvasProps) => {
               <span className="hidden sm:inline text-xs">{copied ? "Copied" : "Copy"}</span>
             </Button>
           )}
-          {blobUrl && (
+          {(blobUrl || videoUrl) && (
             <Button
               type="button"
               variant="ghost"
