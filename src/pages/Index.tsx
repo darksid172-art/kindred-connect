@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Phone, Sparkles, Image as ImageIcon, ArrowUp, Menu, Paperclip, X, Plus, FileText, Presentation, Film, GraduationCap, Check, Terminal, Square } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Phone, Sparkles, Image as ImageIcon, ArrowUp, Menu, Paperclip, X, Plus, FileText, Presentation, Film, GraduationCap, Check, Terminal, Square, LayoutDashboard } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,6 +35,16 @@ import {
   parseNewsRequest,
   getNews,
 } from "@/lib/sarvis";
+import {
+  parseNearbyIntent,
+  parseCalendarIntent,
+  parseGmailIntent,
+  parseDriveIntent,
+  findNearby,
+  listCalendar,
+  listGmail,
+  listDrive,
+} from "@/lib/google";
 import { generateDocument, generateSlides, generateVideo } from "@/lib/generators";
 import { useSettings, applyTheme, STUDY_SYSTEM_PROMPT, buildStudyPrompt, type OS, type UserProfile } from "@/lib/settings";
 import { isSlashCommand, buildCommand, parseSlash, COMMAND_HELP } from "@/lib/systemCommands";
