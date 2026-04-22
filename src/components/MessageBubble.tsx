@@ -16,20 +16,28 @@ interface MessageBubbleProps {
   onOpenCanvas?: (content: CanvasContent) => void;
 }
 
+// Strip any stray "(pronounced ...)" hints the model might still add.
+const stripPronunciationHints = (text: string): string =>
+  text
+    .replace(/\s*[([]\s*pronounced[^)\]]*[)\]]/gi, "")
+    .replace(/[,–—-]\s*pronounced[^.,!?\n]*/gi, "")
+    .replace(/\bS[\s.\-_]*A[\s.\-_]*R[\s.\-_]*V[\s.\-_]*I[\s.\-_]*S\b/gi, "SARVIS");
+
 export const MessageBubble = ({ message, streaming, onOpenCanvas }: MessageBubbleProps) => {
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
 
+  const displayContent = isUser ? message.content : stripPronunciationHints(message.content);
+
   const handleCopy = () => {
-    navigator.clipboard.writeText(message.content);
+    navigator.clipboard.writeText(displayContent);
     setCopied(true);
     toast.success("Copied to clipboard");
     setTimeout(() => setCopied(false), 2000);
   };
 
   const handleSpeak = () => {
-    // Use shared deep male voice; helper also rewrites SARVIS -> "service".
-    void speakWithMaleVoice(message.content);
+    void speakWithMaleVoice(displayContent);
   };
 
   if (isUser) {
