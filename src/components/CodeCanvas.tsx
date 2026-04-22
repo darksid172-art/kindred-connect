@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { X, Copy, Volume2, Square, Check, Code as CodeIcon, Download, FileText, Presentation, Film } from "lucide-react";
+import { X, Copy, Volume2, Square, Check, Code as CodeIcon, Download, FileText, Presentation, Film, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { SlidePreview, type SlideOutline, type SlideTheme } from "@/components/SlidePreview";
 import { speakWithMaleVoice, speakableText } from "@/lib/voice";
+import { stitchVideo, type VideoFrame } from "@/lib/videoStitch";
 
 export type CanvasKind = "code" | "pdf" | "pptx" | "video";
 
@@ -26,6 +27,10 @@ export interface CanvasContent {
   // slides preview data
   outline?: SlideOutline;
   theme?: SlideTheme;
+  // video stitching inputs
+  videoFrames?: VideoFrame[];
+  narration?: string;
+  secondsPerFrame?: number;
 }
 
 interface CodeCanvasProps {
