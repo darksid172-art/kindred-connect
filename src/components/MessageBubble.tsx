@@ -16,20 +16,28 @@ interface MessageBubbleProps {
   onOpenCanvas?: (content: CanvasContent) => void;
 }
 
+// Strip any stray "(pronounced ...)" hints the model might still add.
+const stripPronunciationHints = (text: string): string =>
+  text
+    .replace(/\s*[([]\s*pronounced[^)\]]*[)\]]/gi, "")
+    .replace(/[,–—-]\s*pronounced[^.,!?\n]*/gi, "")
+    .replace(/\bS[\s.\-_]*A[\s.\-_]*R[\s.\-_]*V[\s.\-_]*I[\s.\-_]*S\b/gi, "SARVIS");
+
 export const MessageBubble = ({ message, streaming, onOpenCanvas }: MessageBubbleProps) => {
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
 
+  const displayContent = isUser ? message.content : stripPronunciationHints(message.content);
+
   const handleCopy = () => {
-    navigator.clipboard.writeText(message.content);
+    navigator.clipboard.writeText(displayContent);
     setCopied(true);
     toast.success("Copied to clipboard");
     setTimeout(() => setCopied(false), 2000);
   };
 
   const handleSpeak = () => {
-    // Use shared deep male voice; helper also rewrites SARVIS -> "service".
-    void speakWithMaleVoice(message.content);
+    void speakWithMaleVoice(displayContent);
   };
 
   if (isUser) {
@@ -77,7 +85,7 @@ export const MessageBubble = ({ message, streaming, onOpenCanvas }: MessageBubbl
             </Button>
           </div>
         )}
-        {message.content && (
+        {displayContent && (
           <div className="group relative">
             <div
               className={cn(
@@ -140,7 +148,7 @@ export const MessageBubble = ({ message, streaming, onOpenCanvas }: MessageBubbl
                   },
                 }}
               >
-                {message.content}
+                {displayContent}
               </ReactMarkdown>
               {streaming && (
                 <span className="ml-0.5 inline-block h-4 w-1 animate-pulse rounded-sm bg-foreground align-middle" />
