@@ -353,22 +353,25 @@ export const CodeCanvas = ({ open, content, onClose }: CodeCanvasProps) => {
         </ScrollArea>
       )}
 
-      {content.kind === "video" && blobUrl && (
-        <div className="flex-1 flex flex-col items-center justify-center bg-black">
-          <img src={blobUrl} alt={content.title ?? "video"} className="max-h-full max-w-full" />
-          {audioBlobUrl && (
-            <div className="w-full bg-secondary/80 border-t border-border p-4">
-              <div className="max-w-full mx-auto">
-                <p className="text-xs text-muted-foreground mb-2">🎤 Narration</p>
-                <audio
-                  ref={audioRef}
-                  src={audioBlobUrl}
-                  controls
-                  className="w-full"
-                  autoPlay={false}
-                />
-              </div>
+      {content.kind === "video" && (
+        <div className="flex-1 flex flex-col items-center justify-center bg-black p-4">
+          {stitching && (
+            <div className="flex flex-col items-center gap-3 text-white/80">
+              <Loader2 className="h-8 w-8 animate-spin" />
+              <p className="text-sm">{stitchStep || "Rendering video…"}</p>
+              <p className="text-xs text-white/50">Searching the web for images, recording frames…</p>
             </div>
+          )}
+          {!stitching && videoUrl && (
+            <video
+              src={videoUrl}
+              controls
+              autoPlay
+              className="max-h-full max-w-full rounded"
+            />
+          )}
+          {!stitching && !videoUrl && (
+            <p className="text-sm text-white/60">No video available.</p>
           )}
         </div>
       )}
