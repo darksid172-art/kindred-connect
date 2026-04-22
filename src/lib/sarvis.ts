@@ -11,12 +11,29 @@ export interface NewsArticle {
   imageUrl: string | null;
 }
 
+export interface NearbyMapResult {
+  category: string;
+  center: { lat: number; lon: number };
+  radius: number;
+  places: Array<{
+    id: string;
+    name: string;
+    category: string;
+    address: string;
+    lat: number;
+    lon: number;
+    distance: number;
+    osmUrl: string;
+  }>;
+}
+
 export interface Message {
   id: string;
   role: Role;
   content: string;
   imageUrl?: string;
   news?: { query: string | null; articles: NewsArticle[] };
+  nearby?: NearbyMapResult;
   createdAt: number;
 }
 
