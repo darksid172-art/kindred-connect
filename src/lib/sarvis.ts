@@ -2,11 +2,21 @@ import { supabase } from "@/integrations/supabase/client";
 
 export type Role = "user" | "assistant";
 
+export interface NewsArticle {
+  title: string;
+  description: string | null;
+  url: string;
+  source: string;
+  publishedAt: string;
+  imageUrl: string | null;
+}
+
 export interface Message {
   id: string;
   role: Role;
   content: string;
   imageUrl?: string;
+  news?: { query: string | null; articles: NewsArticle[] };
   createdAt: number;
 }
 
@@ -64,6 +74,35 @@ export function deriveTitle(text: string): string {
 
 export function isImageRequest(text: string): boolean {
   return /\b(image|draw|picture|generate.+(image|picture)|paint|sketch)\b/i.test(text);
+}
+
+// Detects requests like "news about ai", "latest news on tesla", "headlines"
+export function parseNewsRequest(text: string): { isNews: boolean; query: string | null } {
+  const t = text.trim();
+  // Headlines / top news (no topic)
+  if (/^\s*(top\s+)?(news|headlines)\s*(today|now)?\s*\??\s*$/i.test(t)) {
+    return { isNews: true, query: null };
+  }
+  const m = t.match(/(?:latest\s+|recent\s+|today'?s?\s+)?news\s+(?:about|on|regarding|for)\s+(.+)/i);
+  if (m) return { isNews: true, query: m[1].replace(/[?.!]+$/, "").trim() };
+  const m2 = t.match(/(?:latest|recent|today'?s?)\s+(?:headlines|news)\s+(?:about|on|for)\s+(.+)/i);
+  if (m2) return { isNews: true, query: m2[1].replace(/[?.!]+$/, "").trim() };
+  return { isNews: false, query: null };
+}
+
+export async function getNews(
+  params: { query?: string | null; country?: string; category?: string; pageSize?: number } = {},
+): Promise<{ articles?: NewsArticle[]; query?: string | null; error?: string }> {
+  try {
+    const { data, error } = await supabase.functions.invoke("get-news", {
+      body: params,
+    });
+    if (error) return { error: error.message };
+    if (data?.error) return { error: data.error };
+    return { articles: data?.articles ?? [], query: data?.query ?? null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "News API Error" };
+  }
 }
 
 const PROJECT_URL = import.meta.env.VITE_SUPABASE_URL as string;

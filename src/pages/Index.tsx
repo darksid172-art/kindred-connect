@@ -31,6 +31,8 @@ import {
   saveChats,
   streamChat,
   executeSarvisCommand,
+  parseNewsRequest,
+  getNews,
 } from "@/lib/sarvis";
 import { generateDocument, generateSlides, generateVideo } from "@/lib/generators";
 import { useSettings, applyTheme, STUDY_SYSTEM_PROMPT, buildStudyPrompt, type OS, type UserProfile } from "@/lib/settings";
@@ -323,6 +325,30 @@ const Index = () => {
       ...activeChat.messages.map((m) => ({ role: m.role, content: m.content })),
       { role: "user" as const, content: outgoing },
     ];
+
+    const newsIntent = parseNewsRequest(text);
+    if (newsIntent.isNews) {
+      const placeholder = newMessage("assistant", "");
+      appendMessage(chatId, placeholder);
+      setStreamingId(placeholder.id);
+
+      const result = await getNews({ query: newsIntent.query });
+      setStreamingId(null);
+
+      if (result.error) {
+        updateMessageContent(chatId, placeholder.id, () => `News error: ${result.error}`);
+        toast.error(result.error);
+      } else {
+        const headerText = newsIntent.query
+          ? `Here are the latest stories on **${newsIntent.query}**:`
+          : "Here are today's top headlines:";
+        updateMessageContent(chatId, placeholder.id, () => headerText, {
+          news: { query: newsIntent.query, articles: result.articles ?? [] },
+        });
+      }
+      setBusy(false);
+      return;
+    }
 
     if (isImageRequest(text)) {
       const placeholder = newMessage("assistant", "");

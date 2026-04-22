@@ -6,6 +6,7 @@ import sarvisLogo from "@/assets/sarvis-logo.png";
 import { Button } from "@/components/ui/button";
 import { Code2, Download, Copy, Volume2, Check } from "lucide-react";
 import type { CanvasContent } from "@/components/CodeCanvas";
+import { NewsCards } from "@/components/NewsCards";
 import { useState } from "react";
 import { toast } from "sonner";
 import { speakWithMaleVoice } from "@/lib/voice";
@@ -84,6 +85,9 @@ export const MessageBubble = ({ message, streaming, onOpenCanvas }: MessageBubbl
               <Download className="h-4 w-4" />
             </Button>
           </div>
+        )}
+        {message.news && (
+          <NewsCards articles={message.news.articles} query={message.news.query} />
         )}
         {displayContent && (
           <div className="group relative">
@@ -178,7 +182,7 @@ export const MessageBubble = ({ message, streaming, onOpenCanvas }: MessageBubbl
             </div>
           </div>
         )}
-        {!message.content && streaming && (
+        {!message.content && !message.news && streaming && (
           <div className="flex items-center gap-1.5 pt-1">
             <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground" style={{ animationDelay: "0ms" }} />
             <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground" style={{ animationDelay: "150ms" }} />
