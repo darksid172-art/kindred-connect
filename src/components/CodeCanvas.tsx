@@ -59,6 +59,10 @@ export const CodeCanvas = ({ open, content, onClose }: CodeCanvasProps) => {
   const [copied, setCopied] = useState(false);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [videoFilename, setVideoFilename] = useState<string>("sarvis-video.webm");
+  const [stitching, setStitching] = useState(false);
+  const [stitchStep, setStitchStep] = useState<string>("");
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -87,6 +91,42 @@ export const CodeCanvas = ({ open, content, onClose }: CodeCanvasProps) => {
       setAudioBlobUrl(null);
     }
   }, [content?.audioBase64]);
+
+  // Stitch a real video file from frames + narration when the canvas opens with video frames
+  useEffect(() => {
+    let cancelled = false;
+    let createdUrl: string | null = null;
+    if (content?.kind === "video" && content.videoFrames && content.videoFrames.length > 0) {
+      setStitching(true);
+      setStitchStep("Preparing…");
+      stitchVideo({
+        frames: content.videoFrames,
+        narration: content.narration ?? "",
+        secondsPerFrame: content.secondsPerFrame ?? 3,
+        onProgress: (s) => !cancelled && setStitchStep(s),
+      })
+        .then((res) => {
+          if (cancelled) {
+            URL.revokeObjectURL(res.url);
+            return;
+          }
+          createdUrl = res.url;
+          setVideoUrl(res.url);
+          setVideoFilename(res.filename);
+        })
+        .catch((e) => {
+          console.error("video stitch error", e);
+          if (!cancelled) toast.error(e instanceof Error ? e.message : "Failed to render video");
+        })
+        .finally(() => !cancelled && setStitching(false));
+    } else {
+      setVideoUrl(null);
+    }
+    return () => {
+      cancelled = true;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [content]);
 
   useEffect(() => {
     return () => {
