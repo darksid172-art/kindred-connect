@@ -1,4 +1,58 @@
-import { getGoogleAccessToken, googleCors as corsHeaders } from "../_shared/google.ts";
+// Gmail edge function — list inbox + send email.
+// Uses the GOOGLE_REFRESH_TOKEN to auto-mint short-lived access tokens.
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
+
+let cached: { token: string; expiresAt: number } | null = null;
+async function getGoogleAccessToken(): Promise<string> {
+  if (cached && Date.now() < cached.expiresAt - 5 * 60 * 1000) return cached.token;
+  const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
+  const clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
+  const refreshToken = Deno.env.get("GOOGLE_REFRESH_TOKEN");
+  if (!clientId || !clientSecret || !refreshToken) {
+    throw new Error("Google OAuth secrets not configured");
+  }
+  const resp = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: "refresh_token",
+    }),
+  });
+  if (!resp.ok) throw new Error(`Google token refresh ${resp.status}: ${await resp.text()}`);
+  const data = await resp.json();
+  cached = { token: data.access_token, expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000 };
+  return cached.token;
+}
+
+function base64UrlEncodeUtf8(s: string): string {
+  const bytes = new TextEncoder().encode(s);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function buildRfc2822(to: string, subject: string, body: string, cc?: string, bcc?: string): string {
+  const lines = [
+    `To: ${to}`,
+    cc ? `Cc: ${cc}` : "",
+    bcc ? `Bcc: ${bcc}` : "",
+    `Subject: ${subject}`,
+    "MIME-Version: 1.0",
+    'Content-Type: text/plain; charset="UTF-8"',
+    "Content-Transfer-Encoding: 7bit",
+    "",
+    body,
+  ].filter(Boolean);
+  return lines.join("\r\n");
+}
 
 interface MessageMeta {
   id: string;
@@ -50,6 +104,38 @@ Deno.serve(async (req) => {
       );
 
       return new Response(JSON.stringify({ messages }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "send") {
+      const { to, subject, body: emailBody, cc, bcc } = body;
+      if (!to || !subject || !emailBody) {
+        return new Response(JSON.stringify({ error: "to, subject, body required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const raw = base64UrlEncodeUtf8(buildRfc2822(to, subject, emailBody, cc, bcc));
+      const r = await fetch(
+        "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+        {
+          method: "POST",
+          headers: { ...auth, "Content-Type": "application/json" },
+          body: JSON.stringify({ raw }),
+        },
+      );
+      if (!r.ok) {
+        const errText = await r.text();
+        if (r.status === 403 && /insufficient/i.test(errText)) {
+          throw new Error(
+            "Gmail SEND scope missing on your refresh token. Re-authorize Google with the gmail.send scope and update GOOGLE_REFRESH_TOKEN.",
+          );
+        }
+        throw new Error(`Gmail send ${r.status}: ${errText}`);
+      }
+      const sent = await r.json();
+      return new Response(JSON.stringify({ ok: true, id: sent.id, threadId: sent.threadId }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
