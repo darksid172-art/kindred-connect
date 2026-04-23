@@ -481,6 +481,88 @@ const Index = () => {
       return;
     }
 
+    // ---- Send email via Gmail ----
+    const sendEmail = parseSendEmailIntent(text);
+    if (sendEmail.isSend && sendEmail.to) {
+      const placeholder = newMessage("assistant", "");
+      appendMessage(chatId, placeholder);
+      setStreamingId(placeholder.id);
+      const r = await sendGmail({
+        to: sendEmail.to,
+        subject: sendEmail.subject ?? "Hello",
+        body: sendEmail.body ?? "Hi,\n\nSent from SARVIS.",
+      });
+      setStreamingId(null);
+      if (r.error) {
+        updateMessageContent(chatId, placeholder.id, () => `Couldn't send email: ${r.error}`);
+        toast.error(r.error);
+      } else {
+        updateMessageContent(
+          chatId,
+          placeholder.id,
+          () => `✅ Email sent to **${sendEmail.to}**\n\n**Subject:** ${sendEmail.subject}\n\n${sendEmail.body}`,
+        );
+        toast.success("Email sent");
+      }
+      setBusy(false);
+      return;
+    }
+
+    // ---- YouTube channel analytics ----
+    if (parseYouTubeAnalyticsIntent(text)) {
+      const placeholder = newMessage("assistant", "");
+      appendMessage(chatId, placeholder);
+      setStreamingId(placeholder.id);
+      const r = await getYouTubeAnalytics();
+      setStreamingId(null);
+      if (r.error || !r.analytics) {
+        updateMessageContent(chatId, placeholder.id, () => `YouTube error: ${r.error ?? "no data"}`);
+      } else {
+        const a = r.analytics;
+        const subs = a.channel.subscriberHidden ? "hidden" : a.channel.subscriberCount.toLocaleString();
+        const topLines = a.top.slice(0, 3)
+          .map((v, i) => `${i + 1}. **${v.title}** — ${v.views.toLocaleString()} views, ${v.likes.toLocaleString()} likes`)
+          .join("\n");
+        updateMessageContent(
+          chatId,
+          placeholder.id,
+          () => `📊 **${a.channel.title}** analytics:\n\n- Subscribers: **${subs}**\n- Total views: **${a.channel.viewCount.toLocaleString()}**\n- Videos: **${a.channel.videoCount.toLocaleString()}**\n- Avg views (last ${a.recent.length}): **${a.avgViews.toLocaleString()}**\n\n**Top recent videos:**\n${topLines || "_No recent videos_"}\n\nOpen the [Dashboard](/dashboard) for live stats.`,
+        );
+      }
+      setBusy(false);
+      return;
+    }
+
+    // ---- Reminder (creates calendar event) ----
+    const reminder = parseReminderIntent(text);
+    if (reminder.isReminder && reminder.whenISO && reminder.what) {
+      const placeholder = newMessage("assistant", "");
+      appendMessage(chatId, placeholder);
+      setStreamingId(placeholder.id);
+      const start = new Date(reminder.whenISO);
+      const end = new Date(start.getTime() + 30 * 60 * 1000);
+      const r = await createCalendarEvent({
+        summary: reminder.what,
+        startISO: start.toISOString(),
+        endISO: end.toISOString(),
+        reminderMinutes: reminder.reminderMinutes ?? 0,
+      });
+      setStreamingId(null);
+      if (r.error) {
+        updateMessageContent(chatId, placeholder.id, () => `Couldn't set reminder: ${r.error}`);
+        toast.error(r.error);
+      } else {
+        updateMessageContent(
+          chatId,
+          placeholder.id,
+          () => `⏰ Reminder set: **${reminder.what}** on ${start.toLocaleString()}.`,
+        );
+        toast.success("Reminder added to calendar");
+      }
+      setBusy(false);
+      return;
+    }
+
     if (isImageRequest(text)) {
       const placeholder = newMessage("assistant", "");
       appendMessage(chatId, placeholder);
