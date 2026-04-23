@@ -14,3 +14,30 @@ verify_jwt = false
 
 [functions.maps-nearby]
 verify_jwt = false
+
+[functions.get-news]
+verify_jwt = false
+
+[functions.generate-video]
+verify_jwt = false
+
+[functions.generate-slides]
+verify_jwt = false
+
+[functions.generate-document]
+verify_jwt = false
+
+[functions.generate-image]
+verify_jwt = false
+
+[functions.generate-tts]
+verify_jwt = false
+
+[functions.chat]
+verify_jwt = false
+
+[functions.chat-once]
+verify_jwt = false
+
+[functions.get-location]
+verify_jwt = false

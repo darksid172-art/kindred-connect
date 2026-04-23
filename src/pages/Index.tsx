@@ -54,6 +54,7 @@ import {
 import { generateDocument, generateSlides, generateVideo } from "@/lib/generators";
 import { useSettings, applyTheme, STUDY_SYSTEM_PROMPT, buildStudyPrompt, type OS, type UserProfile } from "@/lib/settings";
 import { isSlashCommand, buildCommand, parseSlash, COMMAND_HELP } from "@/lib/systemCommands";
+import { SlideStyleDialog, rememberSlideStyle, type SlideStyleId } from "@/components/SlideStyleDialog";
 import sarvisLogo from "@/assets/sarvis-logo.png";
 
 interface AttachedFile {
@@ -80,6 +81,8 @@ const Index = () => {
   const [canvasContent, setCanvasContent] = useState<CanvasContent | null>(null);
   const [studyProfileOpen, setStudyProfileOpen] = useState(false);
   const [learnOpen, setLearnOpen] = useState(false);
+  const [slideStyleOpen, setSlideStyleOpen] = useState(false);
+  const [pendingSlideTopic, setPendingSlideTopic] = useState<string>("");
   const isMobile = useIsMobile();
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -478,6 +481,88 @@ const Index = () => {
       return;
     }
 
+    // ---- Send email via Gmail ----
+    const sendEmail = parseSendEmailIntent(text);
+    if (sendEmail.isSend && sendEmail.to) {
+      const placeholder = newMessage("assistant", "");
+      appendMessage(chatId, placeholder);
+      setStreamingId(placeholder.id);
+      const r = await sendGmail({
+        to: sendEmail.to,
+        subject: sendEmail.subject ?? "Hello",
+        body: sendEmail.body ?? "Hi,\n\nSent from SARVIS.",
+      });
+      setStreamingId(null);
+      if (r.error) {
+        updateMessageContent(chatId, placeholder.id, () => `Couldn't send email: ${r.error}`);
+        toast.error(r.error);
+      } else {
+        updateMessageContent(
+          chatId,
+          placeholder.id,
+          () => `✅ Email sent to **${sendEmail.to}**\n\n**Subject:** ${sendEmail.subject}\n\n${sendEmail.body}`,
+        );
+        toast.success("Email sent");
+      }
+      setBusy(false);
+      return;
+    }
+
+    // ---- YouTube channel analytics ----
+    if (parseYouTubeAnalyticsIntent(text)) {
+      const placeholder = newMessage("assistant", "");
+      appendMessage(chatId, placeholder);
+      setStreamingId(placeholder.id);
+      const r = await getYouTubeAnalytics();
+      setStreamingId(null);
+      if (r.error || !r.analytics) {
+        updateMessageContent(chatId, placeholder.id, () => `YouTube error: ${r.error ?? "no data"}`);
+      } else {
+        const a = r.analytics;
+        const subs = a.channel.subscriberHidden ? "hidden" : a.channel.subscriberCount.toLocaleString();
+        const topLines = a.top.slice(0, 3)
+          .map((v, i) => `${i + 1}. **${v.title}** — ${v.views.toLocaleString()} views, ${v.likes.toLocaleString()} likes`)
+          .join("\n");
+        updateMessageContent(
+          chatId,
+          placeholder.id,
+          () => `📊 **${a.channel.title}** analytics:\n\n- Subscribers: **${subs}**\n- Total views: **${a.channel.viewCount.toLocaleString()}**\n- Videos: **${a.channel.videoCount.toLocaleString()}**\n- Avg views (last ${a.recent.length}): **${a.avgViews.toLocaleString()}**\n\n**Top recent videos:**\n${topLines || "_No recent videos_"}\n\nOpen the [Dashboard](/dashboard) for live stats.`,
+        );
+      }
+      setBusy(false);
+      return;
+    }
+
+    // ---- Reminder (creates calendar event) ----
+    const reminder = parseReminderIntent(text);
+    if (reminder.isReminder && reminder.whenISO && reminder.what) {
+      const placeholder = newMessage("assistant", "");
+      appendMessage(chatId, placeholder);
+      setStreamingId(placeholder.id);
+      const start = new Date(reminder.whenISO);
+      const end = new Date(start.getTime() + 30 * 60 * 1000);
+      const r = await createCalendarEvent({
+        summary: reminder.what,
+        startISO: start.toISOString(),
+        endISO: end.toISOString(),
+        reminderMinutes: reminder.reminderMinutes ?? 0,
+      });
+      setStreamingId(null);
+      if (r.error) {
+        updateMessageContent(chatId, placeholder.id, () => `Couldn't set reminder: ${r.error}`);
+        toast.error(r.error);
+      } else {
+        updateMessageContent(
+          chatId,
+          placeholder.id,
+          () => `⏰ Reminder set: **${reminder.what}** on ${start.toLocaleString()}.`,
+        );
+        toast.success("Reminder added to calendar");
+      }
+      setBusy(false);
+      return;
+    }
+
     if (isImageRequest(text)) {
       const placeholder = newMessage("assistant", "");
       appendMessage(chatId, placeholder);
@@ -542,6 +627,7 @@ const Index = () => {
   const runFileGenerator = async (
     kind: "pdf" | "pptx" | "video",
     label: string,
+    themeId?: SlideStyleId,
   ) => {
     if (busy || !activeChat) return;
     const topicSource = input.trim();
@@ -549,6 +635,13 @@ const Index = () => {
     const topic = topicSource || lastUser?.content || "";
     if (!topic) {
       toast.error(`Type a topic first, then tap "${label}".`);
+      return;
+    }
+
+    // Slides → ask user to pick a style first (skip if one was just chosen)
+    if (kind === "pptx" && !themeId) {
+      setPendingSlideTopic(topic);
+      setSlideStyleOpen(true);
       return;
     }
 
@@ -561,8 +654,12 @@ const Index = () => {
     appendMessage(chatId, placeholder);
     setStreamingId(placeholder.id);
 
-    const fn = kind === "pdf" ? generateDocument : kind === "pptx" ? generateSlides : generateVideo;
-    const result = await fn(topic, settings.model);
+    const result =
+      kind === "pdf"
+        ? await generateDocument(topic, settings.model)
+        : kind === "pptx"
+        ? await generateSlides(topic, settings.model, themeId)
+        : await generateVideo(topic, settings.model);
     setStreamingId(null);
     setBusy(false);
 
@@ -575,7 +672,7 @@ const Index = () => {
     const canvasKind = kind === "pdf" ? "pdf" : kind === "pptx" ? "pptx" : "video";
     const display =
       kind === "pptx"
-        ? `Your **${result.title ?? label}** slide deck is ready — preview it on the right. Tap **Download** to save the .pptx.`
+        ? `Your **${result.title ?? label}** slide deck is ready in the **${result.theme?.name ?? "selected"}** style — preview it on the right. Tap **Download** to save the .pptx.`
         : `Done. Opened ${label.toLowerCase()} in the canvas — tap **Download** to save.`;
     updateMessageContent(chatId, placeholder.id, () => display);
     handleOpenCanvas({
@@ -592,6 +689,17 @@ const Index = () => {
       secondsPerFrame: result.secondsPerFrame,
     });
     toast.success(`${label} ready`);
+  };
+
+  const handlePickSlideStyle = (style: SlideStyleId) => {
+    rememberSlideStyle(style);
+    setSlideStyleOpen(false);
+    const topic = pendingSlideTopic;
+    setPendingSlideTopic("");
+    if (topic) {
+      setInput(topic);
+      setTimeout(() => runFileGenerator("pptx", "Slides", style), 0);
+    }
   };
 
   const handleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -905,6 +1013,15 @@ const Index = () => {
           const msg = newMessage('assistant', `Generated learning plan for your topic:\n\n${overview}`);
           appendMessage(chat.id, msg);
         }}
+      />
+      <SlideStyleDialog
+        open={slideStyleOpen}
+        onOpenChange={(o) => {
+          setSlideStyleOpen(o);
+          if (!o) setPendingSlideTopic("");
+        }}
+        onPick={handlePickSlideStyle}
+        topic={pendingSlideTopic}
       />
     </div>
   );

@@ -36,76 +36,42 @@ interface Theme {
   layout: "topbar" | "sidebar" | "card" | "minimal" | "gradient";
 }
 
+// Five canonical templates the user can pick from in the UI.
 const THEMES: Theme[] = [
   {
-    id: "midnight",
-    name: "Midnight Executive",
+    id: "corporate",
+    name: "Corporate / Business",
     bg: "F5F7FA", titleBg: "1E2761",
     primary: "1E2761", accent: "06B6D4", body: "1F2937", titleFg: "FFFFFF",
     fontHead: "Calibri", fontBody: "Calibri", layout: "topbar",
   },
   {
-    id: "forest",
-    name: "Forest & Moss",
-    bg: "F5F5F5", titleBg: "2C5F2D",
-    primary: "2C5F2D", accent: "97BC62", body: "212121", titleFg: "F5F5F5",
-    fontHead: "Georgia", fontBody: "Calibri", layout: "sidebar",
+    id: "minimalist",
+    name: "Minimalist",
+    bg: "F2F2F2", titleBg: "212121",
+    primary: "212121", accent: "F96167", body: "212121", titleFg: "F2F2F2",
+    fontHead: "Palatino", fontBody: "Calibri", layout: "minimal",
   },
   {
-    id: "coral",
-    name: "Coral Energy",
+    id: "creative",
+    name: "Creative / Modern",
     bg: "FFFFFF", titleBg: "F96167",
     primary: "2F3C7E", accent: "F96167", body: "2F3C7E", titleFg: "FFFFFF",
     fontHead: "Arial Black", fontBody: "Arial", layout: "card",
   },
   {
-    id: "terracotta",
-    name: "Warm Terracotta",
-    bg: "E7E8D1", titleBg: "B85042",
-    primary: "B85042", accent: "A7BEAE", body: "3A2E2A", titleFg: "FFFFFF",
-    fontHead: "Cambria", fontBody: "Calibri", layout: "minimal",
-  },
-  {
-    id: "ocean",
-    name: "Ocean Gradient",
-    bg: "F2F6FA", titleBg: "065A82",
-    primary: "065A82", accent: "1C7293", body: "1F2937", titleFg: "FFFFFF",
-    fontHead: "Trebuchet MS", fontBody: "Calibri", layout: "gradient",
-  },
-  {
-    id: "charcoal",
-    name: "Charcoal Minimal",
-    bg: "F2F2F2", titleBg: "212121",
-    primary: "36454F", accent: "F96167", body: "212121", titleFg: "F2F2F2",
-    fontHead: "Palatino", fontBody: "Calibri", layout: "minimal",
-  },
-  {
-    id: "teal",
-    name: "Teal Trust",
-    bg: "F4FFFD", titleBg: "028090",
-    primary: "028090", accent: "02C39A", body: "1F2937", titleFg: "FFFFFF",
-    fontHead: "Trebuchet MS", fontBody: "Calibri", layout: "topbar",
-  },
-  {
-    id: "berry",
-    name: "Berry & Cream",
-    bg: "ECE2D0", titleBg: "6D2E46",
-    primary: "6D2E46", accent: "A26769", body: "2A1A20", titleFg: "ECE2D0",
-    fontHead: "Georgia", fontBody: "Calibri", layout: "sidebar",
-  },
-  {
-    id: "sage",
-    name: "Sage Calm",
-    bg: "F4F8F5", titleBg: "50808E",
-    primary: "50808E", accent: "84B59F", body: "1F2937", titleFg: "FFFFFF",
-    fontHead: "Cambria", fontBody: "Calibri", layout: "card",
-  },
-  {
-    id: "cherry",
-    name: "Cherry Bold",
+    id: "pitch",
+    name: "Pitch Deck",
     bg: "FCF6F5", titleBg: "990011",
     primary: "990011", accent: "2F3C7E", body: "1F1F1F", titleFg: "FCF6F5",
     fontHead: "Impact", fontBody: "Arial", layout: "gradient",
+  },
+  {
+    id: "infographic",
+    name: "Data / Infographic",
+    bg: "F4FFFD", titleBg: "028090",
+    primary: "028090", accent: "02C39A", body: "1F2937", titleFg: "FFFFFF",
+    fontHead: "Trebuchet MS", fontBody: "Calibri", layout: "sidebar",
   },
 ];
 
