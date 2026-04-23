@@ -1,4 +1,33 @@
-import { getGoogleAccessToken, googleCors as corsHeaders } from "../_shared/google.ts";
+// Calendar edge function — list + create events.
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
+
+let cached: { token: string; expiresAt: number } | null = null;
+async function getGoogleAccessToken(): Promise<string> {
+  if (cached && Date.now() < cached.expiresAt - 5 * 60 * 1000) return cached.token;
+  const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
+  const clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
+  const refreshToken = Deno.env.get("GOOGLE_REFRESH_TOKEN");
+  if (!clientId || !clientSecret || !refreshToken) throw new Error("Google OAuth secrets not configured");
+  const resp = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: "refresh_token",
+    }),
+  });
+  if (!resp.ok) throw new Error(`Google token refresh ${resp.status}: ${await resp.text()}`);
+  const data = await resp.json();
+  cached = { token: data.access_token, expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000 };
+  return cached.token;
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -35,14 +64,14 @@ Deno.serve(async (req) => {
     }
 
     if (action === "create") {
-      const { summary, description, startISO, endISO, reminderMinutes } = body;
+      const { summary, description, startISO, endISO, reminderMinutes, timeZone } = body;
       if (!summary || !startISO || !endISO) {
         return new Response(JSON.stringify({ error: "summary, startISO, endISO required" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+      const tz = timeZone || "UTC";
       const event: Record<string, unknown> = {
         summary,
         description: description ?? "",

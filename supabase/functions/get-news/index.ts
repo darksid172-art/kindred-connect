@@ -1,3 +1,6 @@
+// Fetch top news headlines or topical news via NewsAPI.
+// Re-saved to force redeployment.
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
