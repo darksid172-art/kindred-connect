@@ -1014,6 +1014,15 @@ const Index = () => {
           appendMessage(chat.id, msg);
         }}
       />
+      <SlideStyleDialog
+        open={slideStyleOpen}
+        onOpenChange={(o) => {
+          setSlideStyleOpen(o);
+          if (!o) setPendingSlideTopic("");
+        }}
+        onPick={handlePickSlideStyle}
+        topic={pendingSlideTopic}
+      />
     </div>
   );
 };
