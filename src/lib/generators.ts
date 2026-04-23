@@ -31,10 +31,10 @@ export async function generateDocument(topic: string, model?: string): Promise<G
   }
 }
 
-export async function generateSlides(topic: string, model?: string): Promise<GenFileResult> {
+export async function generateSlides(topic: string, model?: string, themeId?: string): Promise<GenFileResult> {
   try {
     const { data, error } = await supabase.functions.invoke("generate-slides", {
-      body: { topic, model },
+      body: { topic, model, themeId },
     });
     if (error) return { error: error.message };
     if (data?.error) return { error: data.error };
