@@ -54,6 +54,7 @@ import {
 import { generateDocument, generateSlides, generateVideo } from "@/lib/generators";
 import { useSettings, applyTheme, STUDY_SYSTEM_PROMPT, buildStudyPrompt, type OS, type UserProfile } from "@/lib/settings";
 import { isSlashCommand, buildCommand, parseSlash, COMMAND_HELP } from "@/lib/systemCommands";
+import { SlideStyleDialog, rememberSlideStyle, type SlideStyleId } from "@/components/SlideStyleDialog";
 import sarvisLogo from "@/assets/sarvis-logo.png";
 
 interface AttachedFile {
@@ -80,6 +81,8 @@ const Index = () => {
   const [canvasContent, setCanvasContent] = useState<CanvasContent | null>(null);
   const [studyProfileOpen, setStudyProfileOpen] = useState(false);
   const [learnOpen, setLearnOpen] = useState(false);
+  const [slideStyleOpen, setSlideStyleOpen] = useState(false);
+  const [pendingSlideTopic, setPendingSlideTopic] = useState<string>("");
   const isMobile = useIsMobile();
 
   const scrollRef = useRef<HTMLDivElement>(null);
