@@ -627,6 +627,7 @@ const Index = () => {
   const runFileGenerator = async (
     kind: "pdf" | "pptx" | "video",
     label: string,
+    themeId?: SlideStyleId,
   ) => {
     if (busy || !activeChat) return;
     const topicSource = input.trim();
@@ -634,6 +635,13 @@ const Index = () => {
     const topic = topicSource || lastUser?.content || "";
     if (!topic) {
       toast.error(`Type a topic first, then tap "${label}".`);
+      return;
+    }
+
+    // Slides → ask user to pick a style first (skip if one was just chosen)
+    if (kind === "pptx" && !themeId) {
+      setPendingSlideTopic(topic);
+      setSlideStyleOpen(true);
       return;
     }
 
@@ -646,8 +654,12 @@ const Index = () => {
     appendMessage(chatId, placeholder);
     setStreamingId(placeholder.id);
 
-    const fn = kind === "pdf" ? generateDocument : kind === "pptx" ? generateSlides : generateVideo;
-    const result = await fn(topic, settings.model);
+    const result =
+      kind === "pdf"
+        ? await generateDocument(topic, settings.model)
+        : kind === "pptx"
+        ? await generateSlides(topic, settings.model, themeId)
+        : await generateVideo(topic, settings.model);
     setStreamingId(null);
     setBusy(false);
 
@@ -660,7 +672,7 @@ const Index = () => {
     const canvasKind = kind === "pdf" ? "pdf" : kind === "pptx" ? "pptx" : "video";
     const display =
       kind === "pptx"
-        ? `Your **${result.title ?? label}** slide deck is ready — preview it on the right. Tap **Download** to save the .pptx.`
+        ? `Your **${result.title ?? label}** slide deck is ready in the **${result.theme?.name ?? "selected"}** style — preview it on the right. Tap **Download** to save the .pptx.`
         : `Done. Opened ${label.toLowerCase()} in the canvas — tap **Download** to save.`;
     updateMessageContent(chatId, placeholder.id, () => display);
     handleOpenCanvas({
@@ -677,6 +689,17 @@ const Index = () => {
       secondsPerFrame: result.secondsPerFrame,
     });
     toast.success(`${label} ready`);
+  };
+
+  const handlePickSlideStyle = (style: SlideStyleId) => {
+    rememberSlideStyle(style);
+    setSlideStyleOpen(false);
+    const topic = pendingSlideTopic;
+    setPendingSlideTopic("");
+    if (topic) {
+      setInput(topic);
+      setTimeout(() => runFileGenerator("pptx", "Slides", style), 0);
+    }
   };
 
   const handleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
