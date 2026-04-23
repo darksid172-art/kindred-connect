@@ -1,5 +1,6 @@
 // Find places near a coordinate using OpenStreetMap Overpass API.
 // No API key required. Returns POIs of the requested category within radius (meters).
+// (Inlined to ensure the function deploys as a self-contained unit.)
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

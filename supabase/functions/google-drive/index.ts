@@ -1,4 +1,42 @@
-import { getGoogleAccessToken, googleCors as corsHeaders } from "../_shared/google.ts";
+// Drive edge function — list, upload, download.
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
+
+let cached: { token: string; expiresAt: number } | null = null;
+async function getGoogleAccessToken(): Promise<string> {
+  if (cached && Date.now() < cached.expiresAt - 5 * 60 * 1000) return cached.token;
+  const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
+  const clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
+  const refreshToken = Deno.env.get("GOOGLE_REFRESH_TOKEN");
+  if (!clientId || !clientSecret || !refreshToken) throw new Error("Google OAuth secrets not configured");
+  const resp = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: "refresh_token",
+    }),
+  });
+  if (!resp.ok) throw new Error(`Google token refresh ${resp.status}: ${await resp.text()}`);
+  const data = await resp.json();
+  cached = { token: data.access_token, expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000 };
+  return cached.token;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + CHUNK)) as unknown as number[]);
+  }
+  return btoa(bin);
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -24,7 +62,6 @@ Deno.serve(async (req) => {
     }
 
     if (action === "upload") {
-      // Expect: { name, mimeType, dataBase64 }
       const { name, mimeType, dataBase64 } = body;
       if (!name || !mimeType || !dataBase64) {
         return new Response(JSON.stringify({ error: "name, mimeType, dataBase64 required" }), {
@@ -84,9 +121,7 @@ Deno.serve(async (req) => {
       );
       if (!r.ok) throw new Error(`Drive download ${r.status}: ${await r.text()}`);
       const buf = new Uint8Array(await r.arrayBuffer());
-      let bin = "";
-      for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
-      const dataBase64 = btoa(bin);
+      const dataBase64 = bytesToBase64(buf);
       return new Response(
         JSON.stringify({ name: meta.name, mimeType: meta.mimeType, dataBase64 }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } },

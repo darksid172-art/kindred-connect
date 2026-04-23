@@ -40,10 +40,16 @@ import {
   parseCalendarIntent,
   parseGmailIntent,
   parseDriveIntent,
+  parseSendEmailIntent,
+  parseYouTubeAnalyticsIntent,
+  parseReminderIntent,
   findNearby,
   listCalendar,
   listGmail,
   listDrive,
+  sendGmail,
+  getYouTubeAnalytics,
+  createCalendarEvent,
 } from "@/lib/google";
 import { generateDocument, generateSlides, generateVideo } from "@/lib/generators";
 import { useSettings, applyTheme, STUDY_SYSTEM_PROMPT, buildStudyPrompt, type OS, type UserProfile } from "@/lib/settings";

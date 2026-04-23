@@ -1,4 +1,33 @@
-import { getGoogleAccessToken, googleCors as corsHeaders } from "../_shared/google.ts";
+// YouTube edge function — channel info, search, basic analytics summary.
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
+
+let cached: { token: string; expiresAt: number } | null = null;
+async function getGoogleAccessToken(): Promise<string> {
+  if (cached && Date.now() < cached.expiresAt - 5 * 60 * 1000) return cached.token;
+  const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
+  const clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
+  const refreshToken = Deno.env.get("GOOGLE_REFRESH_TOKEN");
+  if (!clientId || !clientSecret || !refreshToken) throw new Error("Google OAuth secrets not configured");
+  const resp = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: "refresh_token",
+    }),
+  });
+  if (!resp.ok) throw new Error(`Google token refresh ${resp.status}: ${await resp.text()}`);
+  const data = await resp.json();
+  cached = { token: data.access_token, expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000 };
+  return cached.token;
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -9,7 +38,7 @@ Deno.serve(async (req) => {
     const token = await getGoogleAccessToken();
     const auth = { Authorization: `Bearer ${token}` };
 
-    if (action === "channel") {
+    if (action === "channel" || action === "analytics") {
       const channelId = body.channelId || Deno.env.get("YOUTUBE_CHANNEL_ID");
       const url = channelId
         ? `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id=${channelId}`
@@ -24,16 +53,61 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      const channel = {
+        id: ch.id,
+        title: ch.snippet?.title,
+        thumbnail: ch.snippet?.thumbnails?.default?.url,
+        subscriberCount: parseInt(ch.statistics?.subscriberCount ?? "0"),
+        subscriberHidden: ch.statistics?.hiddenSubscriberCount === true,
+        viewCount: parseInt(ch.statistics?.viewCount ?? "0"),
+        videoCount: parseInt(ch.statistics?.videoCount ?? "0"),
+      };
+
+      if (action === "channel") {
+        return new Response(JSON.stringify(channel), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // ---- analytics: pull recent uploads + their per-video stats ----
+      const uploadsPlaylist = `UU${(channel.id ?? "").slice(2)}`;
+      const playR = await fetch(
+        `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&maxResults=10&playlistId=${uploadsPlaylist}`,
+        { headers: auth },
+      );
+      let recent: Array<Record<string, unknown>> = [];
+      if (playR.ok) {
+        const playJson = await playR.json();
+        const ids = (playJson.items ?? [])
+          .map((it: Record<string, any>) => it.contentDetails?.videoId)
+          .filter(Boolean)
+          .join(",");
+        if (ids) {
+          const vR = await fetch(
+            `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics&id=${ids}`,
+            { headers: auth },
+          );
+          if (vR.ok) {
+            const vJson = await vR.json();
+            recent = (vJson.items ?? []).map((v: Record<string, any>) => ({
+              videoId: v.id,
+              title: v.snippet?.title,
+              publishedAt: v.snippet?.publishedAt,
+              thumbnail: v.snippet?.thumbnails?.medium?.url,
+              views: parseInt(v.statistics?.viewCount ?? "0"),
+              likes: parseInt(v.statistics?.likeCount ?? "0"),
+              comments: parseInt(v.statistics?.commentCount ?? "0"),
+            }));
+          }
+        }
+      }
+
+      const top = [...recent].sort((a, b) => Number(b.views ?? 0) - Number(a.views ?? 0)).slice(0, 5);
+      const totalRecentViews = recent.reduce((s, v) => s + Number(v.views ?? 0), 0);
+      const avgViews = recent.length ? Math.round(totalRecentViews / recent.length) : 0;
+
       return new Response(
-        JSON.stringify({
-          id: ch.id,
-          title: ch.snippet?.title,
-          thumbnail: ch.snippet?.thumbnails?.default?.url,
-          subscriberCount: parseInt(ch.statistics?.subscriberCount ?? "0"),
-          subscriberHidden: ch.statistics?.hiddenSubscriberCount === true,
-          viewCount: parseInt(ch.statistics?.viewCount ?? "0"),
-          videoCount: parseInt(ch.statistics?.videoCount ?? "0"),
-        }),
+        JSON.stringify({ channel, recent, top, totalRecentViews, avgViews }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }

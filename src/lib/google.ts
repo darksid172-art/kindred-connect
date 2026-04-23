@@ -18,6 +18,21 @@ export async function listGmail(max = 8): Promise<{ messages?: GmailMessage[]; e
   return { messages: data?.messages ?? [] };
 }
 
+export async function sendGmail(input: {
+  to: string;
+  subject: string;
+  body: string;
+  cc?: string;
+  bcc?: string;
+}): Promise<{ ok?: boolean; id?: string; error?: string }> {
+  const { data, error } = await supabase.functions.invoke("google-gmail", {
+    body: { action: "send", ...input },
+  });
+  if (error) return { error: error.message };
+  if (data?.error) return { error: data.error };
+  return { ok: true, id: data?.id };
+}
+
 // ---------- Calendar ----------
 export interface CalendarEvent {
   id: string;
@@ -43,8 +58,9 @@ export async function createCalendarEvent(input: {
   endISO: string;
   reminderMinutes?: number;
 }): Promise<{ event?: CalendarEvent; error?: string }> {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const { data, error } = await supabase.functions.invoke("google-calendar", {
-    body: { action: "create", ...input },
+    body: { action: "create", timeZone: tz, ...input },
   });
   if (error) return { error: error.message };
   if (data?.error) return { error: data.error };
@@ -124,11 +140,33 @@ export interface YouTubeVideo {
   publishedAt: string;
   thumbnail: string;
 }
+export interface YouTubeRecentVideo {
+  videoId: string;
+  title: string;
+  publishedAt: string;
+  thumbnail: string;
+  views: number;
+  likes: number;
+  comments: number;
+}
+export interface YouTubeAnalytics {
+  channel: YouTubeChannel;
+  recent: YouTubeRecentVideo[];
+  top: YouTubeRecentVideo[];
+  totalRecentViews: number;
+  avgViews: number;
+}
 export async function getYouTubeChannel(): Promise<{ channel?: YouTubeChannel; error?: string }> {
   const { data, error } = await supabase.functions.invoke("google-youtube", { body: { action: "channel" } });
   if (error) return { error: error.message };
   if (data?.error) return { error: data.error };
   return { channel: data };
+}
+export async function getYouTubeAnalytics(): Promise<{ analytics?: YouTubeAnalytics; error?: string }> {
+  const { data, error } = await supabase.functions.invoke("google-youtube", { body: { action: "analytics" } });
+  if (error) return { error: error.message };
+  if (data?.error) return { error: data.error };
+  return { analytics: data };
 }
 export async function searchYouTube(query: string, max = 6): Promise<{ videos?: YouTubeVideo[]; error?: string }> {
   const { data, error } = await supabase.functions.invoke("google-youtube", {
@@ -181,4 +219,121 @@ export function parseCalendarIntent(text: string): boolean {
 
 export function parseGmailIntent(text: string): boolean {
   return /\b(gmail|my\s*emails?|inbox|new\s*mail|unread\s*emails?)\b/i.test(text);
+}
+
+// "Send an email to abc@x.com saying hello" / "email john@x.com about the report"
+export interface SendEmailIntent {
+  isSend: boolean;
+  to?: string;
+  subject?: string;
+  body?: string;
+}
+export function parseSendEmailIntent(text: string): SendEmailIntent {
+  const emailMatch = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+  if (!emailMatch) return { isSend: false };
+  if (!/\b(send|email|write|compose|mail)\b/i.test(text)) return { isSend: false };
+  const to = emailMatch[0];
+
+  // subject extraction: "about X" or "subject: X"
+  let subject: string | undefined;
+  const subjMatch = text.match(/(?:subject\s*[:\-]\s*|about\s+|regarding\s+|re\s*[:\-]\s*)([^\n.]+?)(?:\s+(?:saying|that says|with body|body|message)\b|[.\n]|$)/i);
+  if (subjMatch) subject = subjMatch[1].trim().replace(/[."]+$/, "");
+
+  // body extraction: after "saying", "message", "body:"
+  let body: string | undefined;
+  const bodyMatch = text.match(/(?:saying|that says|message\s*[:\-]?|body\s*[:\-]?|tell (?:him|her|them) that)\s+([\s\S]+)$/i);
+  if (bodyMatch) body = bodyMatch[1].trim().replace(/^["']|["']$/g, "");
+
+  if (!subject && body) subject = body.slice(0, 60);
+  if (!body && subject) body = subject;
+  if (!subject) subject = "Hello";
+  if (!body) body = "Hi,\n\nSent from SARVIS.";
+
+  return { isSend: true, to, subject, body };
+}
+
+// "youtube analytics", "channel stats", "how is my channel doing"
+export function parseYouTubeAnalyticsIntent(text: string): boolean {
+  return /\b(youtube\s+(analytics|stats|metrics|insights|performance)|channel\s+(analytics|stats|metrics|insights|performance|doing)|my\s+(youtube|channel))\b/i.test(text);
+}
+
+// "remind me to X at 5pm" / "set a reminder for tomorrow 9am to call Mom"
+export interface ReminderIntent {
+  isReminder: boolean;
+  what?: string;
+  whenISO?: string;
+  reminderMinutes?: number;
+}
+export function parseReminderIntent(text: string): ReminderIntent {
+  if (!/\b(remind\s+me|set\s+a?\s*reminder|schedule\s+(a\s+)?reminder)\b/i.test(text)) {
+    return { isReminder: false };
+  }
+  // "remind me to X at TIME" or "remind me at TIME to X"
+  const m1 = text.match(/remind\s+me\s+(?:to\s+)?(.+?)\s+(?:at|on|for|by|tomorrow|today|tonight|in)\s+(.+)$/i);
+  const m2 = text.match(/remind\s+me\s+(?:at|on|for|by|tomorrow|today|tonight|in)\s+(.+?)\s+(?:to|that|about)\s+(.+)$/i);
+  let what = "";
+  let whenStr = "";
+  if (m1) { what = m1[1].trim(); whenStr = m1[2].trim(); }
+  else if (m2) { whenStr = m2[1].trim(); what = m2[2].trim(); }
+  else {
+    const m3 = text.match(/remind\s+me\s+(?:to\s+)?(.+)$/i);
+    if (m3) what = m3[1].trim();
+  }
+
+  const whenISO = parseLooseDateTime(whenStr || text);
+  return {
+    isReminder: true,
+    what: what.replace(/[.?!]+$/, "") || "Reminder",
+    whenISO,
+    reminderMinutes: 0,
+  };
+}
+
+function parseLooseDateTime(s: string): string {
+  const now = new Date();
+  const lower = s.toLowerCase();
+
+  let target = new Date(now.getTime() + 60 * 60 * 1000); // default: 1 hour from now
+
+  if (/tomorrow/.test(lower)) {
+    target = new Date(now);
+    target.setDate(target.getDate() + 1);
+    target.setHours(9, 0, 0, 0);
+  } else if (/tonight/.test(lower)) {
+    target = new Date(now);
+    target.setHours(20, 0, 0, 0);
+  } else if (/today/.test(lower)) {
+    target = new Date(now);
+    target.setHours(target.getHours() + 1, 0, 0, 0);
+  }
+
+  // "in 30 minutes" / "in 2 hours"
+  const inM = lower.match(/in\s+(\d+)\s*(min|minute|minutes|hour|hours|hr|hrs|day|days)/);
+  if (inM) {
+    const n = parseInt(inM[1]);
+    const unit = inM[2];
+    target = new Date(now);
+    if (/min/.test(unit)) target.setMinutes(target.getMinutes() + n);
+    else if (/h/.test(unit)) target.setHours(target.getHours() + n);
+    else if (/day/.test(unit)) target.setDate(target.getDate() + n);
+  }
+
+  // "at 5pm" / "at 14:30"
+  const at = lower.match(/(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/);
+  if (at && (lower.includes("at ") || /\d+\s*(am|pm)/.test(lower))) {
+    let h = parseInt(at[1]);
+    const min = at[2] ? parseInt(at[2]) : 0;
+    const mer = at[3];
+    if (mer === "pm" && h < 12) h += 12;
+    if (mer === "am" && h === 12) h = 0;
+    if (h >= 0 && h < 24) {
+      target.setHours(h, min, 0, 0);
+      // If time has passed today and no "tomorrow" hint, push to tomorrow
+      if (target.getTime() < now.getTime() && !/tomorrow/.test(lower)) {
+        target.setDate(target.getDate() + 1);
+      }
+    }
+  }
+
+  return target.toISOString();
 }
