@@ -1252,6 +1252,33 @@ const Index = () => {
         onPick={handlePickSlideStyle}
         topic={pendingSlideTopic}
       />
+      {cmdPlan && (
+        <ConfirmCommandDialog
+          open={cmdDialogOpen}
+          onOpenChange={(o) => {
+            setCmdDialogOpen(o);
+            if (!o) setCmdPlan(null);
+          }}
+          explanation={cmdPlan.explanation}
+          commands={cmdPlan.commands}
+          os={cmdPlan.os}
+          onApprove={runApprovedCommands}
+        />
+      )}
+      {editPlan && (
+        <SelfEditDialog
+          open={editDialogOpen}
+          onOpenChange={(o) => {
+            setEditDialogOpen(o);
+            if (!o) setEditPlan(null);
+          }}
+          filePath={editPlan.path}
+          oldContent={editPlan.oldContent}
+          newContent={editPlan.newContent}
+          explanation={editPlan.explanation}
+          onApprove={applyApprovedEdit}
+        />
+      )}
     </div>
   );
 };
