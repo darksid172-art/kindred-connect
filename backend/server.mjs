@@ -614,7 +614,6 @@ function classifyCommand(cmd) {
     /\bmkfs(\.|\s)/i,                  // mkfs
     /\bdd\s+if=.*of=\/dev\//i,        // dd to raw device
     /:\(\)\s*\{\s*:\|:&\s*\}\s*;:/,   // fork bomb
-    /\b(shutdown|reboot|halt|poweroff)\b/i,
     /\bchmod\s+-R\s+777\s+\//i,
     /\b>\s*\/dev\/sd[a-z]/i,
   ];
@@ -631,7 +630,11 @@ function classifyCommand(cmd) {
     /\bwget\s+[^|]*\|\s*(sh|bash|zsh)/i,
     /\brm\s+-rf?\b/i,
     /\bmv\s+.*\s+\/(etc|usr|var|boot|sys|root)/i,
-    /\b(systemctl|service)\s+(start|stop|restart|disable|enable)/i,
+    /\b(systemctl|service)\s+(start|stop|restart|disable|enable|poweroff|reboot|suspend|hibernate)/i,
+    /\b(shutdown|reboot|halt|poweroff)\b/i,        // power commands now allowed with confirm
+    /\brundll32\.exe\s+(user32\.dll,LockWorkStation|powrprof\.dll)/i,
+    /\bloginctl\s+(lock-session|terminate-session)/i,
+    /\bgnome-session-quit\b/i,
     /\bkill(all)?\s+-9?\s*/i,
     /\biptables\b/i,
     /\bufw\b/i,
