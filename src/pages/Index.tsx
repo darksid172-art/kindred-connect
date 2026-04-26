@@ -365,6 +365,107 @@ const Index = () => {
       return;
     }
 
+    // ---- SARVIS computer-control intent (natural language → shell plan) ----
+    if (text) {
+      const compIntent = parseComputerIntent(text);
+      if (compIntent.isComputer) {
+        appendMessage(chatId, newMessage("user", text));
+        const placeholder = newMessage(
+          "assistant",
+          `🖥️  Planning shell commands for your **${settings.os}**…`,
+        );
+        appendMessage(chatId, placeholder);
+        setStreamingId(placeholder.id);
+        setBusy(true);
+
+        const { plan, error } = await planCommand(compIntent.request, settings.os);
+        setStreamingId(null);
+        setBusy(false);
+
+        if (error || !plan) {
+          updateMessageContent(chatId, placeholder.id, () => `Couldn't plan that command: ${error ?? "no plan returned"}`);
+          toast.error(error ?? "Plan failed");
+          setInput("");
+          return;
+        }
+        if (plan.refused || plan.commands.length === 0) {
+          updateMessageContent(chatId, placeholder.id, () => `I won't run that. ${plan.explanation}`);
+          setInput("");
+          return;
+        }
+        updateMessageContent(
+          chatId,
+          placeholder.id,
+          () => `**Plan ready** — ${plan.explanation}\n\nReview & approve in the dialog to run on your ${settings.os}.`,
+        );
+        setCmdPlan({
+          explanation: plan.explanation,
+          commands: plan.commands,
+          os: settings.os,
+          chatId,
+          placeholderId: placeholder.id,
+          originalRequest: compIntent.request,
+        });
+        setCmdDialogOpen(true);
+        setInput("");
+        return;
+      }
+
+      const editIntent = parseSelfEditIntent(text);
+      if (editIntent.isSelfEdit) {
+        appendMessage(chatId, newMessage("user", text));
+        const placeholder = newMessage("assistant", "✏️  Planning a code edit…");
+        appendMessage(chatId, placeholder);
+        setStreamingId(placeholder.id);
+        setBusy(true);
+
+        const { plan, error } = await planSelfEdit(editIntent.request);
+        setStreamingId(null);
+        setBusy(false);
+
+        if (error || !plan) {
+          updateMessageContent(chatId, placeholder.id, () => `Couldn't plan the edit: ${error ?? "no plan returned"}`);
+          toast.error(error ?? "Self-edit plan failed");
+          setInput("");
+          return;
+        }
+        if (plan.refused) {
+          updateMessageContent(chatId, placeholder.id, () => `I won't make that change. ${plan.refuseReason ?? plan.explanation}`);
+          setInput("");
+          return;
+        }
+
+        const { content: oldContent, error: readErr } = await readProjectFile(plan.path);
+        if (readErr) {
+          updateMessageContent(
+            chatId,
+            placeholder.id,
+            () => `Couldn't read **${plan.path}** from disk: ${readErr}\n\nMake sure the SARVIS bridge is running on \`localhost:3001\`.`,
+          );
+          toast.error("File read failed");
+          setInput("");
+          return;
+        }
+
+        updateMessageContent(
+          chatId,
+          placeholder.id,
+          () => `**Edit ready** — ${plan.explanation}\n\nReview the diff for \`${plan.path}\` and approve to apply.`,
+        );
+        setEditPlan({
+          path: plan.path,
+          oldContent: oldContent ?? "",
+          newContent: plan.newContent,
+          explanation: plan.explanation,
+          chatId,
+          placeholderId: placeholder.id,
+        });
+        setEditDialogOpen(true);
+        setInput("");
+        return;
+      }
+    }
+
     const visibleText =
       text || (attachments.length > 0 ? `(Sent ${attachments.length} file(s))` : "");
     const outgoing = buildOutgoingText(text);
