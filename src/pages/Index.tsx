@@ -55,6 +55,18 @@ import { generateDocument, generateSlides, generateVideo } from "@/lib/generator
 import { useSettings, applyTheme, STUDY_SYSTEM_PROMPT, buildStudyPrompt, type OS, type UserProfile } from "@/lib/settings";
 import { isSlashCommand, buildCommand, parseSlash, COMMAND_HELP } from "@/lib/systemCommands";
 import { SlideStyleDialog, rememberSlideStyle, type SlideStyleId } from "@/components/SlideStyleDialog";
+import {
+  parseComputerIntent,
+  parseSelfEditIntent,
+  planCommand,
+  planSelfEdit,
+  execCommand,
+  readProjectFile,
+  writeProjectFile,
+  type PlannedCommand,
+} from "@/lib/computer";
+import { ConfirmCommandDialog } from "@/components/ConfirmCommandDialog";
+import { SelfEditDialog } from "@/components/SelfEditDialog";
 import sarvisLogo from "@/assets/sarvis-logo.png";
 
 interface AttachedFile {
@@ -83,6 +95,28 @@ const Index = () => {
   const [learnOpen, setLearnOpen] = useState(false);
   const [slideStyleOpen, setSlideStyleOpen] = useState(false);
   const [pendingSlideTopic, setPendingSlideTopic] = useState<string>("");
+
+  // SARVIS computer-control + self-edit dialogs
+  const [cmdDialogOpen, setCmdDialogOpen] = useState(false);
+  const [cmdPlan, setCmdPlan] = useState<{
+    explanation: string;
+    commands: PlannedCommand[];
+    os: string;
+    chatId: string;
+    placeholderId: string;
+    originalRequest: string;
+  } | null>(null);
+
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editPlan, setEditPlan] = useState<{
+    path: string;
+    oldContent: string;
+    newContent: string;
+    explanation: string;
+    chatId: string;
+    placeholderId: string;
+  } | null>(null);
+
   const isMobile = useIsMobile();
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -329,6 +363,107 @@ const Index = () => {
       
       setInput("");
       return;
+    }
+
+    // ---- SARVIS computer-control intent (natural language → shell plan) ----
+    if (text) {
+      const compIntent = parseComputerIntent(text);
+      if (compIntent.isComputer) {
+        appendMessage(chatId, newMessage("user", text));
+        const placeholder = newMessage(
+          "assistant",
+          `🖥️  Planning shell commands for your **${settings.os}**…`,
+        );
+        appendMessage(chatId, placeholder);
+        setStreamingId(placeholder.id);
+        setBusy(true);
+
+        const { plan, error } = await planCommand(compIntent.request, settings.os);
+        setStreamingId(null);
+        setBusy(false);
+
+        if (error || !plan) {
+          updateMessageContent(chatId, placeholder.id, () => `Couldn't plan that command: ${error ?? "no plan returned"}`);
+          toast.error(error ?? "Plan failed");
+          setInput("");
+          return;
+        }
+        if (plan.refused || plan.commands.length === 0) {
+          updateMessageContent(chatId, placeholder.id, () => `I won't run that. ${plan.explanation}`);
+          setInput("");
+          return;
+        }
+        updateMessageContent(
+          chatId,
+          placeholder.id,
+          () => `**Plan ready** — ${plan.explanation}\n\nReview & approve in the dialog to run on your ${settings.os}.`,
+        );
+        setCmdPlan({
+          explanation: plan.explanation,
+          commands: plan.commands,
+          os: settings.os,
+          chatId,
+          placeholderId: placeholder.id,
+          originalRequest: compIntent.request,
+        });
+        setCmdDialogOpen(true);
+        setInput("");
+        return;
+      }
+
+      const editIntent = parseSelfEditIntent(text);
+      if (editIntent.isSelfEdit) {
+        appendMessage(chatId, newMessage("user", text));
+        const placeholder = newMessage("assistant", "✏️  Planning a code edit…");
+        appendMessage(chatId, placeholder);
+        setStreamingId(placeholder.id);
+        setBusy(true);
+
+        const { plan, error } = await planSelfEdit(editIntent.request);
+        setStreamingId(null);
+        setBusy(false);
+
+        if (error || !plan) {
+          updateMessageContent(chatId, placeholder.id, () => `Couldn't plan the edit: ${error ?? "no plan returned"}`);
+          toast.error(error ?? "Self-edit plan failed");
+          setInput("");
+          return;
+        }
+        if (plan.refused) {
+          updateMessageContent(chatId, placeholder.id, () => `I won't make that change. ${plan.refuseReason ?? plan.explanation}`);
+          setInput("");
+          return;
+        }
+
+        const { content: oldContent, error: readErr } = await readProjectFile(plan.path);
+        if (readErr) {
+          updateMessageContent(
+            chatId,
+            placeholder.id,
+            () => `Couldn't read **${plan.path}** from disk: ${readErr}\n\nMake sure the SARVIS bridge is running on \`localhost:3001\`.`,
+          );
+          toast.error("File read failed");
+          setInput("");
+          return;
+        }
+
+        updateMessageContent(
+          chatId,
+          placeholder.id,
+          () => `**Edit ready** — ${plan.explanation}\n\nReview the diff for \`${plan.path}\` and approve to apply.`,
+        );
+        setEditPlan({
+          path: plan.path,
+          oldContent: oldContent ?? "",
+          newContent: plan.newContent,
+          explanation: plan.explanation,
+          chatId,
+          placeholderId: placeholder.id,
+        });
+        setEditDialogOpen(true);
+        setInput("");
+        return;
+      }
     }
 
     const visibleText =
@@ -716,6 +851,100 @@ const Index = () => {
     appendMessage(chatId, newMessage("assistant", aiText));
   };
 
+  // ---- Approve & run planned shell commands on the user's machine ----
+  const runApprovedCommands = async (selected: PlannedCommand[]) => {
+    if (!cmdPlan) return;
+    const { chatId, placeholderId, originalRequest, os } = cmdPlan;
+    setCmdDialogOpen(false);
+    setBusy(true);
+
+    const blocks: string[] = [`**Running on your ${os}…**\n`];
+    let appendix = "";
+
+    for (let i = 0; i < selected.length; i++) {
+      const step = selected[i];
+      blocks.push(`\n**Step ${i + 1}** — ${step.why}\n\`\`\`\n$ ${step.cmd}\n\`\`\``);
+      updateMessageContent(chatId, placeholderId, () => blocks.join("\n") + appendix);
+
+      // The backend classifier may still flag "risky" — user already approved here, so confirmed=true.
+      const result = await execCommand(step.cmd, true);
+
+      if ("error" in result && !("classification" in result)) {
+        blocks.push(`\n❌ ${result.error}`);
+        appendix = "";
+        updateMessageContent(chatId, placeholderId, () => blocks.join("\n"));
+        toast.error(result.error);
+        break;
+      }
+      const r = result as Awaited<ReturnType<typeof execCommand>> & { ok: boolean; output: string; error: string; code: number };
+
+      const out = (r.output ?? "").trim();
+      const err = (r.error ?? "").trim();
+      const tail = out ? `\n\`\`\`\n${out.slice(0, 1500)}${out.length > 1500 ? "\n…[truncated]" : ""}\n\`\`\`` : "";
+      const errTail = err ? `\n_stderr:_\n\`\`\`\n${err.slice(0, 800)}\n\`\`\`` : "";
+      blocks.push(`${r.ok ? "✅" : "❌"} exit ${r.code}${tail}${errTail}`);
+      updateMessageContent(chatId, placeholderId, () => blocks.join("\n"));
+
+      if (!r.ok) {
+        // Auto-retry: ask the planner to fix the failing command.
+        blocks.push(`\n🔧 Asking SARVIS to suggest a fix…`);
+        updateMessageContent(chatId, placeholderId, () => blocks.join("\n"));
+        const fix = await planCommand(originalRequest, settings.os, {
+          cmd: step.cmd,
+          code: r.code,
+          output: out,
+          error: err,
+        });
+        if (fix.plan && fix.plan.commands.length > 0 && !fix.plan.refused) {
+          blocks.push(`\n💡 Suggested fix — ${fix.plan.explanation}\n\nClick "Run again" below to retry.`);
+          updateMessageContent(chatId, placeholderId, () => blocks.join("\n"));
+          // Queue the new plan for user approval
+          setCmdPlan({
+            ...cmdPlan,
+            explanation: `Retry: ${fix.plan.explanation}`,
+            commands: fix.plan.commands,
+          });
+          setCmdDialogOpen(true);
+        } else {
+          blocks.push(`\nNo automatic fix available. ${fix.plan?.explanation ?? fix.error ?? ""}`);
+          updateMessageContent(chatId, placeholderId, () => blocks.join("\n"));
+        }
+        break;
+      }
+    }
+
+    setBusy(false);
+    setCmdPlan(null);
+  };
+
+  // ---- Approve & write a planned self-edit ----
+  const applyApprovedEdit = async () => {
+    if (!editPlan) return;
+    const { path, newContent, chatId, placeholderId } = editPlan;
+    setEditDialogOpen(false);
+    setBusy(true);
+
+    const result = await writeProjectFile(path, newContent, true);
+    setBusy(false);
+
+    if (result.error) {
+      updateMessageContent(
+        chatId,
+        placeholderId,
+        () => `❌ Couldn't write **${path}**: ${result.error}`,
+      );
+      toast.error(result.error);
+    } else {
+      updateMessageContent(
+        chatId,
+        placeholderId,
+        () => `✅ Updated **${path}** on disk. Vite will hot-reload the change. A backup is in \`.sarvis-backups/\`.`,
+      );
+      toast.success(`Saved ${path}`);
+    }
+    setEditPlan(null);
+  };
+
   const messages = activeChat?.messages ?? [];
   const isEmpty = messages.length === 0;
 
@@ -1023,6 +1252,33 @@ const Index = () => {
         onPick={handlePickSlideStyle}
         topic={pendingSlideTopic}
       />
+      {cmdPlan && (
+        <ConfirmCommandDialog
+          open={cmdDialogOpen}
+          onOpenChange={(o) => {
+            setCmdDialogOpen(o);
+            if (!o) setCmdPlan(null);
+          }}
+          explanation={cmdPlan.explanation}
+          commands={cmdPlan.commands}
+          os={cmdPlan.os}
+          onApprove={runApprovedCommands}
+        />
+      )}
+      {editPlan && (
+        <SelfEditDialog
+          open={editDialogOpen}
+          onOpenChange={(o) => {
+            setEditDialogOpen(o);
+            if (!o) setEditPlan(null);
+          }}
+          filePath={editPlan.path}
+          oldContent={editPlan.oldContent}
+          newContent={editPlan.newContent}
+          explanation={editPlan.explanation}
+          onApprove={applyApprovedEdit}
+        />
+      )}
     </div>
   );
 };

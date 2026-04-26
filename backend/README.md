@@ -19,25 +19,27 @@ The server will run on `http://localhost:3001`
 ## API Endpoints
 
 ### POST /api/sarvis
-Execute a SARVIS system command.
+Execute a SARVIS slash command (e.g. `/terminal`, `/chrome`).
 
-**Request Body:**
-```json
-{
-  "command": "/terminal",
-  "args": ""
-}
-```
+### POST /api/exec  ← natural-language command runner
+Run an arbitrary shell command for the AI assistant.
 
-**Response:**
-```json
-{
-  "success": true,
-  "output": "Terminal opening...",
-  "command": "/terminal",
-  "os": "linux"
-}
-```
+**Request body:** `{ "cmd": "sudo apt install -y htop", "confirmed": false }`
+
+**Response codes:**
+- `200` — `{ ok, code, classification, output, error, os }`
+- `409` — `{ needsConfirm: true, classification: "risky", cmd }` — UI must re-send with `confirmed: true`
+- `403` — `{ classification: "blocked", error }` — destructive pattern, never run
+
+Classification:
+- `safe` — runs immediately
+- `risky` — requires `confirmed: true` (sudo, package install, rm, systemctl, …)
+- `blocked` — refused (rm -rf /, mkfs, fork bomb, dd to /dev/sd*)
+
+### POST /api/file/read · /api/file/write · /api/file/list
+Read/write files inside the project root for the "edit your own code" feature.
+Writes require `confirmed: true` and create a timestamped backup in `.sarvis-backups/`.
+
 
 ## Supported Commands
 
