@@ -851,6 +851,100 @@ const Index = () => {
     appendMessage(chatId, newMessage("assistant", aiText));
   };
 
+  // ---- Approve & run planned shell commands on the user's machine ----
+  const runApprovedCommands = async (selected: PlannedCommand[]) => {
+    if (!cmdPlan) return;
+    const { chatId, placeholderId, originalRequest, os } = cmdPlan;
+    setCmdDialogOpen(false);
+    setBusy(true);
+
+    const blocks: string[] = [`**Running on your ${os}…**\n`];
+    let appendix = "";
+
+    for (let i = 0; i < selected.length; i++) {
+      const step = selected[i];
+      blocks.push(`\n**Step ${i + 1}** — ${step.why}\n\`\`\`\n$ ${step.cmd}\n\`\`\``);
+      updateMessageContent(chatId, placeholderId, () => blocks.join("\n") + appendix);
+
+      // The backend classifier may still flag "risky" — user already approved here, so confirmed=true.
+      const result = await execCommand(step.cmd, true);
+
+      if ("error" in result && !("classification" in result)) {
+        blocks.push(`\n❌ ${result.error}`);
+        appendix = "";
+        updateMessageContent(chatId, placeholderId, () => blocks.join("\n"));
+        toast.error(result.error);
+        break;
+      }
+      const r = result as Awaited<ReturnType<typeof execCommand>> & { ok: boolean; output: string; error: string; code: number };
+
+      const out = (r.output ?? "").trim();
+      const err = (r.error ?? "").trim();
+      const tail = out ? `\n\`\`\`\n${out.slice(0, 1500)}${out.length > 1500 ? "\n…[truncated]" : ""}\n\`\`\`` : "";
+      const errTail = err ? `\n_stderr:_\n\`\`\`\n${err.slice(0, 800)}\n\`\`\`` : "";
+      blocks.push(`${r.ok ? "✅" : "❌"} exit ${r.code}${tail}${errTail}`);
+      updateMessageContent(chatId, placeholderId, () => blocks.join("\n"));
+
+      if (!r.ok) {
+        // Auto-retry: ask the planner to fix the failing command.
+        blocks.push(`\n🔧 Asking SARVIS to suggest a fix…`);
+        updateMessageContent(chatId, placeholderId, () => blocks.join("\n"));
+        const fix = await planCommand(originalRequest, settings.os, {
+          cmd: step.cmd,
+          code: r.code,
+          output: out,
+          error: err,
+        });
+        if (fix.plan && fix.plan.commands.length > 0 && !fix.plan.refused) {
+          blocks.push(`\n💡 Suggested fix — ${fix.plan.explanation}\n\nClick "Run again" below to retry.`);
+          updateMessageContent(chatId, placeholderId, () => blocks.join("\n"));
+          // Queue the new plan for user approval
+          setCmdPlan({
+            ...cmdPlan,
+            explanation: `Retry: ${fix.plan.explanation}`,
+            commands: fix.plan.commands,
+          });
+          setCmdDialogOpen(true);
+        } else {
+          blocks.push(`\nNo automatic fix available. ${fix.plan?.explanation ?? fix.error ?? ""}`);
+          updateMessageContent(chatId, placeholderId, () => blocks.join("\n"));
+        }
+        break;
+      }
+    }
+
+    setBusy(false);
+    setCmdPlan(null);
+  };
+
+  // ---- Approve & write a planned self-edit ----
+  const applyApprovedEdit = async () => {
+    if (!editPlan) return;
+    const { path, newContent, chatId, placeholderId } = editPlan;
+    setEditDialogOpen(false);
+    setBusy(true);
+
+    const result = await writeProjectFile(path, newContent, true);
+    setBusy(false);
+
+    if (result.error) {
+      updateMessageContent(
+        chatId,
+        placeholderId,
+        () => `❌ Couldn't write **${path}**: ${result.error}`,
+      );
+      toast.error(result.error);
+    } else {
+      updateMessageContent(
+        chatId,
+        placeholderId,
+        () => `✅ Updated **${path}** on disk. Vite will hot-reload the change. A backup is in \`.sarvis-backups/\`.`,
+      );
+      toast.success(`Saved ${path}`);
+    }
+    setEditPlan(null);
+  };
+
   const messages = activeChat?.messages ?? [];
   const isEmpty = messages.length === 0;
 
