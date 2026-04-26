@@ -170,14 +170,72 @@ Deno.serve(async (req) => {
       });
     }
 
+    if (action === "get") {
+      const id = typeof body.id === "string" ? body.id : "";
+      if (!id) {
+        return new Response(JSON.stringify({ error: "id required" }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const r = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`,
+        { headers: auth },
+      );
+      if (!r.ok) throw new Error(`Gmail get ${r.status}: ${await r.text()}`);
+      const m = await r.json();
+      const headers = (m.payload?.headers ?? []) as { name: string; value: string }[];
+      const find = (n: string) => headers.find((h) => h.name.toLowerCase() === n.toLowerCase())?.value ?? "";
+
+      // Walk MIME parts and prefer text/plain, fall back to text/html stripped.
+      const decode = (data: string) => {
+        try {
+          const b64 = data.replace(/-/g, "+").replace(/_/g, "/");
+          const bin = atob(b64.padEnd(b64.length + ((4 - (b64.length % 4)) % 4), "="));
+          const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+          return new TextDecoder("utf-8").decode(bytes);
+        } catch { return ""; }
+      };
+      let plain = "";
+      let html = "";
+      const walk = (part: Record<string, any>) => {
+        if (!part) return;
+        const mime = part.mimeType ?? "";
+        const data = part.body?.data;
+        if (data && mime === "text/plain" && !plain) plain = decode(data);
+        else if (data && mime === "text/html" && !html) html = decode(data);
+        if (Array.isArray(part.parts)) part.parts.forEach(walk);
+      };
+      walk(m.payload ?? {});
+      const bodyText = plain || (html ? html.replace(/<style[\s\S]*?<\/style>/gi, "")
+        .replace(/<script[\s\S]*?<\/script>/gi, "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&nbsp;/g, " ")
+        .replace(/\s{2,}/g, " ")
+        .trim() : (m.snippet ?? ""));
+
+      return new Response(JSON.stringify({
+        id: m.id,
+        from: find("From"),
+        to: find("To"),
+        subject: find("Subject") || "(no subject)",
+        date: find("Date"),
+        snippet: m.snippet ?? "",
+        body: bodyText,
+        unread: (m.labelIds ?? []).includes("UNREAD"),
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     return new Response(JSON.stringify({ error: "unknown action" }), {
-      status: 400,
+      status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
     console.error("google-gmail error", e);
+    // Return 200 with an error field so the client widget can render it
+    // gracefully instead of triggering the runtime-error overlay.
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "error" }), {
-      status: 500,
+      status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }

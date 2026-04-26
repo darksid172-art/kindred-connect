@@ -32,6 +32,31 @@ function buildOverpassQuery(category: string, lat: number, lon: number, radius: 
   return `[out:json][timeout:20];(node${filter}(around:${radius},${lat},${lon});way${filter}(around:${radius},${lat},${lon}););out center 30;`;
 }
 
+const OVERPASS_ENDPOINTS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://overpass.openstreetmap.ru/api/interpreter",
+];
+
+async function runOverpass(query: string): Promise<Record<string, any>> {
+  let lastErr: unknown = null;
+  for (const url of OVERPASS_ENDPOINTS) {
+    try {
+      const r = await fetch(url, {
+        method: "POST",
+        headers: { "User-Agent": UA, "Content-Type": "text/plain" },
+        body: query,
+        signal: AbortSignal.timeout(15000),
+      });
+      if (r.ok) return await r.json();
+      lastErr = new Error(`Overpass ${r.status} from ${new URL(url).host}`);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error("All Overpass mirrors failed");
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -40,23 +65,35 @@ Deno.serve(async (req) => {
     const lat = Number(body.lat);
     const lon = Number(body.lon);
     const category = String(body.category ?? "restaurant");
-    const radius = Math.min(Math.max(parseInt(body.radius) || 1500, 200), 10000);
+    // Allow up to 25 km — useful in low-density rural areas.
+    const radius = Math.min(Math.max(parseInt(body.radius) || 1500, 200), 25000);
 
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
       return new Response(JSON.stringify({ error: "lat & lon required" }), {
-        status: 400,
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const query = buildOverpassQuery(category, lat, lon, radius);
-    const r = await fetch("https://overpass-api.de/api/interpreter", {
-      method: "POST",
-      headers: { "User-Agent": UA, "Content-Type": "text/plain" },
-      body: query,
-    });
-    if (!r.ok) throw new Error(`Overpass ${r.status}: ${await r.text()}`);
-    const data = await r.json();
+    // Try the requested category, then progressively widen the search if empty.
+    const attempts: { cat: string; radius: number }[] = [
+      { cat: category, radius },
+      { cat: category, radius: Math.min(radius * 2, 25000) },
+      { cat: "restaurant", radius: Math.min(radius * 2, 25000) },
+    ];
+
+    let data: Record<string, any> = { elements: [] };
+    let usedRadius = radius;
+    let usedCategory = category;
+    for (const a of attempts) {
+      const q = buildOverpassQuery(a.cat, lat, lon, a.radius);
+      data = await runOverpass(q);
+      if ((data.elements ?? []).length > 0) {
+        usedRadius = a.radius;
+        usedCategory = a.cat;
+        break;
+      }
+    }
 
     const places = (data.elements ?? [])
       .map((el: Record<string, any>) => {
@@ -90,13 +127,13 @@ Deno.serve(async (req) => {
       .sort((a: { distance: number }, b: { distance: number }) => a.distance - b.distance)
       .slice(0, 20);
 
-    return new Response(JSON.stringify({ center: { lat, lon }, category, radius, places }), {
+    return new Response(JSON.stringify({ center: { lat, lon }, category: usedCategory, radius: usedRadius, places }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
     console.error("maps-nearby error", e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "error" }), {
-      status: 500,
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "error", places: [] }), {
+      status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }

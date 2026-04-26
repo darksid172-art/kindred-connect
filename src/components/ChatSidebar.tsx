@@ -129,33 +129,67 @@ interface SystemInfo {
   bluetooth?: string;
 }
 
+const BACKEND_URL_FOR_SYSINFO =
+  (import.meta.env.VITE_BACKEND_URL as string | undefined) ?? "http://localhost:3001";
+
 const SystemInfoComponent = () => {
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+    let interval: ReturnType<typeof setInterval> | null = null;
+
     const fetchSystemInfo = async () => {
       try {
-        const response = await fetch('/api/system-info');
-        if (!response.ok) {
-          console.error('Failed to fetch system info:', response.statusText);
-          return;
-        }
+        const response = await fetch(`${BACKEND_URL_FOR_SYSINFO}/api/system-info`, {
+          // short timeout so we don't hang the UI
+          signal: AbortSignal.timeout(2500),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
-        setSystemInfo(data);
-      } catch (error) {
-        console.error('Failed to fetch system info:', error);
+        if (!cancelled) {
+          setSystemInfo(data);
+          setUnavailable(false);
+        }
+      } catch {
+        // Backend bridge is not running (typical in hosted preview).
+        // Stop polling silently to avoid log spam.
+        if (!cancelled) {
+          setUnavailable(true);
+          if (interval) clearInterval(interval);
+        }
       }
     };
 
     fetchSystemInfo();
-    const interval = setInterval(fetchSystemInfo, 1000); // Update every 1 second
-    return () => clearInterval(interval);
+    interval = setInterval(fetchSystemInfo, 5000);
+    return () => {
+      cancelled = true;
+      if (interval) clearInterval(interval);
+    };
   }, []);
+
+  if (unavailable && !systemInfo) {
+    return (
+      <div className="p-4 border-t border-sidebar-border space-y-2">
+        <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          System Info
+        </div>
+        <div className="flex items-center gap-2">
+          <ModelToggle />
+        </div>
+        <div className="text-xs text-muted-foreground">
+          Local bridge offline. Start the backend (<code>cd backend && npm run dev</code>) to see live CPU/RAM/battery.
+        </div>
+      </div>
+    );
+  }
 
   if (!systemInfo) {
     return (
       <div className="p-4 border-t border-sidebar-border">
-        <div className="text-xs text-muted-foreground">Loading system info...</div>
+        <div className="text-xs text-muted-foreground">Loading system info…</div>
       </div>
     );
   }

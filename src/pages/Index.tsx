@@ -749,9 +749,11 @@ const Index = () => {
     streamAbortControllerRef.current = new AbortController();
 
     let acc = "";
-    const effectiveSystem = settings.studyMode 
+    const { withLocalContext } = await import("@/lib/localContext");
+    const basePrompt = settings.studyMode
       ? buildStudyPrompt(settings.userProfile)
       : settings.systemPrompt;
+    const effectiveSystem = withLocalContext(basePrompt);
 
     // Local Python model path (offline / opted-in). No streaming — one-shot reply.
     if (settings.useLocalModel) {
