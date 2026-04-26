@@ -752,6 +752,23 @@ const Index = () => {
     const effectiveSystem = settings.studyMode 
       ? buildStudyPrompt(settings.userProfile)
       : settings.systemPrompt;
+
+    // Local Python model path (offline / opted-in). No streaming — one-shot reply.
+    if (settings.useLocalModel) {
+      const { sendLocalChat } = await import("@/lib/sarvis");
+      const r = await sendLocalChat({ messages: historyForApi, systemPrompt: effectiveSystem });
+      if (r.error) {
+        updateMessageContent(chatId, aiMsg.id, () => `⚠️ Local model unavailable: ${r.error}\n\nFalling back to online.`);
+        // fall through to online streaming below
+      } else {
+        updateMessageContent(chatId, aiMsg.id, () => `${r.reply ?? ""}\n\n_via local model (${r.adapter ?? "offline"}) — real-time data may be unavailable._`);
+        setStreamingId(null);
+        setBusy(false);
+        streamAbortControllerRef.current = null;
+        return;
+      }
+    }
+
     await streamChat({
       messages: historyForApi,
       model: settings.model,
