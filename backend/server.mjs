@@ -602,25 +602,199 @@ app.post('/api/upload-model', express.json({ limit: '200mb' }), (req, res) => {
   }
 });
 
-// Run a shell command and return stdout/stderr (for AI-run commands)
-app.post('/api/run-command', express.json(), async (req, res) => {
+// ---- Safety classifier for arbitrary shell commands ----
+// Returns "safe" | "risky" | "blocked"
+function classifyCommand(cmd) {
+  const c = cmd.trim();
+  if (!c) return "blocked";
+
+  // Hard blocks — never run, even with confirmation, from this endpoint
+  const blocked = [
+    /\brm\s+-rf?\s+\/(?!\w)/i,        // rm -rf /
+    /\bmkfs(\.|\s)/i,                  // mkfs
+    /\bdd\s+if=.*of=\/dev\//i,        // dd to raw device
+    /:\(\)\s*\{\s*:\|:&\s*\}\s*;:/,   // fork bomb
+    /\b(shutdown|reboot|halt|poweroff)\b/i,
+    /\bchmod\s+-R\s+777\s+\//i,
+    /\b>\s*\/dev\/sd[a-z]/i,
+  ];
+  if (blocked.some((r) => r.test(c))) return "blocked";
+
+  // Risky — needs explicit user confirmation
+  const risky = [
+    /\bsudo\b/i,
+    /\bsu\s+/i,
+    /\b(apt|apt-get|dnf|yum|pacman|snap|brew|winget|choco|scoop)\s+(install|remove|update|upgrade|purge)/i,
+    /\bpip\s+install/i,
+    /\bnpm\s+(install|i|uninstall|remove|publish)/i,
+    /\bcurl\s+[^|]*\|\s*(sh|bash|zsh)/i,         // curl | sh
+    /\bwget\s+[^|]*\|\s*(sh|bash|zsh)/i,
+    /\brm\s+-rf?\b/i,
+    /\bmv\s+.*\s+\/(etc|usr|var|boot|sys|root)/i,
+    /\b(systemctl|service)\s+(start|stop|restart|disable|enable)/i,
+    /\bkill(all)?\s+-9?\s*/i,
+    /\biptables\b/i,
+    /\bufw\b/i,
+    /\bcrontab\s+-/i,
+    /\bgit\s+(push|reset\s+--hard|clean\s+-f)/i,
+    /\bdocker\s+(run|rm|kill|stop)/i,
+    />\s*\/etc\//i,
+  ];
+  if (risky.some((r) => r.test(c))) return "risky";
+
+  return "safe";
+}
+
+function shellFor(currentOS) {
+  if (currentOS === "windows") return { bin: "powershell.exe", flag: "-Command" };
+  return { bin: "sh", flag: "-c" };
+}
+
+// ---- Run an arbitrary shell command (with classification) ----
+// POST { cmd: string, confirmed?: boolean, cwd?: string }
+// If risky and !confirmed → returns 409 with { needsConfirm: true, classification: "risky", cmd }
+// Blocked commands return 403.
+app.post("/api/exec", (req, res) => {
   try {
-    const { cmd } = req.body || {};
-    if (!cmd || typeof cmd !== 'string') return res.status(400).json({ error: 'no cmd' });
-    const child = spawn('sh', ['-c', cmd], { detached: false });
-    let out = '';
-    let err = '';
-    child.stdout.on('data', (d) => { out += d.toString(); });
-    child.stderr.on('data', (d) => { err += d.toString(); });
+    const { cmd, confirmed = false, cwd } = req.body || {};
+    if (!cmd || typeof cmd !== "string") {
+      return res.status(400).json({ error: "Missing 'cmd' (string) in body" });
+    }
+    const currentOS = getOS();
+    const classification = classifyCommand(cmd);
+
+    if (classification === "blocked") {
+      return res.status(403).json({
+        error: "Command blocked for safety (matches a destructive pattern).",
+        classification,
+        cmd,
+        os: currentOS,
+      });
+    }
+    if (classification === "risky" && !confirmed) {
+      return res.status(409).json({
+        needsConfirm: true,
+        classification,
+        cmd,
+        os: currentOS,
+        message: "This command requires explicit user confirmation before running.",
+      });
+    }
+
+    const { bin, flag } = shellFor(currentOS);
+    const child = spawn(bin, [flag, cmd], {
+      cwd: cwd && typeof cwd === "string" ? cwd : PROJECT_ROOT,
+      detached: false,
+    });
+    let out = "";
+    let err = "";
+    child.stdout.on("data", (d) => { out += d.toString(); });
+    child.stderr.on("data", (d) => { err += d.toString(); });
+
     const timeout = setTimeout(() => {
-      try { child.kill('SIGKILL'); } catch(e){}
-    }, 30000);
-    child.on('close', (code) => {
+      try { child.kill("SIGKILL"); } catch (e) { /* ignore */ }
+    }, 60_000);
+
+    child.on("close", (code) => {
       clearTimeout(timeout);
-      return res.json({ code, output: out.trim(), error: err.trim() });
+      // truncate massive outputs
+      const trim = (s) => (s.length > 20_000 ? s.slice(0, 20_000) + "\n…[truncated]" : s);
+      return res.json({
+        ok: code === 0,
+        code,
+        classification,
+        cmd,
+        os: currentOS,
+        output: trim(out),
+        error: trim(err),
+      });
+    });
+
+    child.on("error", (e) => {
+      clearTimeout(timeout);
+      return res.status(500).json({ error: String(e), classification, cmd, os: currentOS });
     });
   } catch (e) {
-    return res.status(500).json({ error: String(e) });
+    return res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+// Backward-compat: keep the old /api/run-command but route it through /api/exec logic
+app.post("/api/run-command", (req, res) => {
+  req.url = "/api/exec";
+  req.body = { cmd: req.body?.cmd, confirmed: true };
+  app._router.handle(req, res);
+});
+
+// ---- File read / write / list for "edit your own code" feature ----
+// All paths are constrained to PROJECT_ROOT.
+function safeResolve(rel) {
+  if (typeof rel !== "string" || !rel) throw new Error("invalid path");
+  // strip leading slashes so "/src/foo" → "src/foo"
+  const cleaned = rel.replace(/^[/\\]+/, "");
+  const abs = path.resolve(PROJECT_ROOT, cleaned);
+  if (!abs.startsWith(PROJECT_ROOT + path.sep) && abs !== PROJECT_ROOT) {
+    throw new Error("path escapes project root");
+  }
+  return abs;
+}
+
+app.post("/api/file/read", (req, res) => {
+  try {
+    const { path: rel } = req.body || {};
+    const abs = safeResolve(rel);
+    const stat = fs.statSync(abs);
+    if (stat.size > 2 * 1024 * 1024) {
+      return res.status(413).json({ error: "File too large to read (>2MB)" });
+    }
+    const content = fs.readFileSync(abs, "utf8");
+    res.json({ ok: true, path: rel, content, size: stat.size });
+  } catch (e) {
+    res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+app.post("/api/file/write", (req, res) => {
+  try {
+    const { path: rel, content, confirmed = false } = req.body || {};
+    if (typeof content !== "string") {
+      return res.status(400).json({ error: "'content' must be a string" });
+    }
+    if (!confirmed) {
+      return res.status(409).json({
+        needsConfirm: true,
+        message: "Self-edit must be explicitly confirmed by the user.",
+        path: rel,
+        bytes: content.length,
+      });
+    }
+    const abs = safeResolve(rel);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    // backup
+    if (fs.existsSync(abs)) {
+      const backupDir = path.join(PROJECT_ROOT, ".sarvis-backups");
+      fs.mkdirSync(backupDir, { recursive: true });
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const backupName = rel.replace(/[/\\]/g, "_") + "." + stamp + ".bak";
+      fs.copyFileSync(abs, path.join(backupDir, backupName));
+    }
+    fs.writeFileSync(abs, content, "utf8");
+    res.json({ ok: true, path: rel, bytes: content.length });
+  } catch (e) {
+    res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+app.post("/api/file/list", (req, res) => {
+  try {
+    const { path: rel = "" } = req.body || {};
+    const abs = safeResolve(rel || ".");
+    const entries = fs.readdirSync(abs, { withFileTypes: true })
+      .filter((d) => !d.name.startsWith(".") && d.name !== "node_modules" && d.name !== "dist")
+      .map((d) => ({ name: d.name, isDir: d.isDirectory() }));
+    res.json({ ok: true, path: rel, entries });
+  } catch (e) {
+    res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
   }
 });
 
