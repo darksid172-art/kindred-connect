@@ -9,13 +9,24 @@ export interface GmailMessage {
   date: string;
   unread: boolean;
 }
-export async function listGmail(max = 8): Promise<{ messages?: GmailMessage[]; error?: string }> {
+export async function listGmail(max = 8, query?: string): Promise<{ messages?: GmailMessage[]; error?: string }> {
   const { data, error } = await supabase.functions.invoke("google-gmail", {
-    body: { action: "list", max },
+    body: { action: "list", max, query },
   });
   if (error) return { error: error.message };
   if (data?.error) return { error: data.error };
   return { messages: data?.messages ?? [] };
+}
+
+/** Marks Gmail message ids as read (removes the UNREAD label). Requires gmail.modify scope. */
+export async function markGmailRead(ids: string[]): Promise<{ ok?: boolean; marked?: number; error?: string }> {
+  if (ids.length === 0) return { ok: true, marked: 0 };
+  const { data, error } = await supabase.functions.invoke("google-gmail", {
+    body: { action: "markRead", ids },
+  });
+  if (error) return { error: error.message };
+  if (data?.error) return { error: data.error };
+  return { ok: true, marked: data?.marked ?? ids.length };
 }
 
 export async function sendGmail(input: {
