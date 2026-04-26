@@ -29,6 +29,19 @@ export async function markGmailRead(ids: string[]): Promise<{ ok?: boolean; mark
   return { ok: true, marked: data?.marked ?? ids.length };
 }
 
+export interface GmailFullMessage extends GmailMessage {
+  to?: string;
+  body: string;
+}
+export async function getGmailMessage(id: string): Promise<{ message?: GmailFullMessage; error?: string }> {
+  const { data, error } = await supabase.functions.invoke("google-gmail", {
+    body: { action: "get", id },
+  });
+  if (error) return { error: error.message };
+  if (data?.error) return { error: data.error };
+  return { message: data as GmailFullMessage };
+}
+
 export async function sendGmail(input: {
   to: string;
   subject: string;
