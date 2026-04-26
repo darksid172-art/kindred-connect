@@ -153,6 +153,26 @@ const Index = () => {
       setChats([c]);
       setActiveId(c.id);
     }
+
+    // Personalized startup briefing — runs once per app load.
+    if (settings.startupBriefing) {
+      (async () => {
+        try {
+          const { buildStartupBriefing } = await import("@/lib/briefing");
+          const result = await buildStartupBriefing(settings);
+          // Append to whichever chat is active (or the first chat).
+          setChats((prev) => {
+            if (prev.length === 0) return prev;
+            const target = prev[0];
+            const msg = newMessage("assistant", result.text);
+            return prev.map((c) => (c.id === target.id ? { ...c, messages: [...c.messages, msg] } : c));
+          });
+          setSettings((s) => ({ ...s, lastBriefing: result.newSnapshot }));
+        } catch (e) {
+          console.warn("[sarvis] briefing failed", e);
+        }
+      })();
+    }
   }, []);
 
   // Monitor study mode and show profile dialog if needed
