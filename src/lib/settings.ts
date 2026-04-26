@@ -98,7 +98,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   studyMode: false,
   os: "linux",
+  startupBriefing: true,
+  emailAutoMarkRead: true,
+  useLocalModel: false,
   userProfile: {
+    name: "",
+    country: "",
     interests: [],
     grade: "",
     educationLevel: "",
