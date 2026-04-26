@@ -95,6 +95,28 @@ const Index = () => {
   const [learnOpen, setLearnOpen] = useState(false);
   const [slideStyleOpen, setSlideStyleOpen] = useState(false);
   const [pendingSlideTopic, setPendingSlideTopic] = useState<string>("");
+
+  // SARVIS computer-control + self-edit dialogs
+  const [cmdDialogOpen, setCmdDialogOpen] = useState(false);
+  const [cmdPlan, setCmdPlan] = useState<{
+    explanation: string;
+    commands: PlannedCommand[];
+    os: string;
+    chatId: string;
+    placeholderId: string;
+    originalRequest: string;
+  } | null>(null);
+
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editPlan, setEditPlan] = useState<{
+    path: string;
+    oldContent: string;
+    newContent: string;
+    explanation: string;
+    chatId: string;
+    placeholderId: string;
+  } | null>(null);
+
   const isMobile = useIsMobile();
 
   const scrollRef = useRef<HTMLDivElement>(null);
