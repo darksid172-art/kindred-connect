@@ -43,7 +43,15 @@ export interface ExecResult {
 
 // ---- Intent detection ---------------------------------------------------
 
-/** Detects "install chrome", "run htop", "open vscode", etc. */
+/**
+ * Detects natural-language requests that should be turned into a shell plan.
+ * Covers installs ("install chrome"), launches ("open vscode"), system control
+ * ("shutdown", "lock the screen", "what's my battery"), info queries
+ * ("disk usage", "list processes"), and explicit shell-y phrasing.
+ *
+ * Pure questions ("what is the time", "who is the president of kenya") are
+ * intentionally NOT matched — those go to the chat model.
+ */
 export function parseComputerIntent(text: string): { isComputer: boolean; request: string } {
   const t = text.trim();
   if (!t) return { isComputer: false, request: "" };
@@ -51,20 +59,44 @@ export function parseComputerIntent(text: string): { isComputer: boolean; reques
   // Slash commands are handled elsewhere (systemCommands.ts).
   if (t.startsWith("/")) return { isComputer: false, request: "" };
 
+  // Pure question form ("what / who / why / when / where / how / is / are ...")
+  // unless it's clearly about THE machine (battery, disk, ip, processes, wifi).
+  const looksLikePureQuestion =
+    /^(what|who|why|when|where|how|is|are|does|do|did|can|could|would|should|tell me about|explain|define)\b/i.test(t)
+    && !/\b(my|this|the)\s+(battery|disk|storage|cpu|ram|memory|ip|wifi|network|processes?|uptime|computer|laptop|pc|machine|system|screen|volume|brightness)\b/i.test(t)
+    && !/\b(battery|disk\s*space|wifi\s*status|cpu\s*usage|ram\s*usage|ip\s*address|local\s*ip|process\s*list)\b/i.test(t);
+  if (looksLikePureQuestion) return { isComputer: false, request: "" };
+
   const patterns: RegExp[] = [
-    /\b(install|uninstall|remove|update|upgrade)\s+\w/i,
-    /\b(run|execute)\s+(the\s+)?command\b/i,
-    /\b(on|to)\s+my\s+(computer|laptop|machine|pc|kali|linux|mac|windows)\b/i,
-    /\b(in|on)\s+(my\s+)?terminal\b/i,
+    // package management
+    /\b(install|uninstall|reinstall|remove|update|upgrade|purge)\s+\w/i,
+    /\b(apt(-get)?|dnf|yum|pacman|brew|winget|choco|scoop|snap|flatpak|pip|pipx|npm|pnpm|yarn|bun|cargo|gem|go\s+install)\s+\w/i,
+    // explicit shell / sudo
     /\bsudo\s+/i,
-    /\bapt(-get)?\s+/i,
-    /\bbrew\s+/i,
-    /\bwinget\s+/i,
-    /\bsnap\s+install\b/i,
-    /\bchmod\s+/i,
-    /\bnpm\s+(install|i|run)\b/i,
-    /\bpip\s+install\b/i,
-    /\b(start|stop|restart)\s+(service|daemon)\b/i,
+    /\b(in|on)\s+(my\s+)?(terminal|shell|bash|zsh|powershell|cmd)\b/i,
+    /\b(run|execute|exec)\s+(the\s+)?(command|script|shell|cmd|`)/i,
+    // app / file launching
+    /\b(open|launch|start|fire\s+up|bring\s+up)\s+(?:my\s+|the\s+)?(chrome|firefox|edge|safari|terminal|finder|explorer|files|file\s+manager|notepad|gedit|vscode|vs\s*code|sublime|spotify|slack|discord|gimp|blender|code|calculator|calc|settings)\b/i,
+    /\b(open|navigate to|go to)\s+(https?:\/\/|www\.)/i,
+    // system control
+    /\b(shut\s*down|shutdown|power\s*off|turn\s+off)\s+(my\s+)?(pc|computer|laptop|machine|system)?\b/i,
+    /\b(restart|reboot)\s+(my\s+)?(pc|computer|laptop|machine|system)?\b/i,
+    /\b(lock|sleep|suspend|hibernate|log\s*out|sign\s*out)\s+(my\s+)?(screen|pc|computer|laptop|machine|session|account)?\b/i,
+    /\b(take|grab)\s+(a\s+)?(screenshot|screen\s*shot|screencap)\b/i,
+    /\b(mute|unmute|set\s+volume|volume\s+to|increase\s+volume|decrease\s+volume|turn\s+(up|down)\s+the\s+volume|brightness\s+to)\b/i,
+    /\b(connect|disconnect|toggle)\s+(wifi|wi-?fi|bluetooth)\b/i,
+    /\b(kill|terminate|end)\s+(the\s+)?(process|task|app)\b/i,
+    /\b(play|pause|resume|stop|skip)\s+(music|the\s+(song|track|video))\b/i,
+    // info queries about my machine
+    /\b(what'?s?|show|tell\s+me|check)\s+(my\s+|the\s+)?(battery|disk\s*(space|usage)?|cpu(\s*usage)?|ram|memory(\s*usage)?|wifi(\s*status)?|ip(\s*address)?|local\s*ip|public\s*ip|uptime|hostname|os\s*version|processes?|running\s*apps?)\b/i,
+    /\b(list|show)\s+(running\s+)?(processes|tasks|apps|programs)\b/i,
+    /\b(ping|traceroute|nslookup)\s+\S+/i,
+    // file ops
+    /\b(create|make|delete|remove|move|rename|copy)\s+(a\s+)?(file|folder|directory)\b/i,
+    // permissions
+    /\bchmod\s+|\bchown\s+/i,
+    // services
+    /\b(start|stop|restart|enable|disable)\s+(the\s+)?(service|daemon)\b/i,
   ];
   if (patterns.some((r) => r.test(t))) return { isComputer: true, request: t };
   return { isComputer: false, request: "" };

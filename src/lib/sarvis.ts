@@ -249,6 +249,31 @@ export async function sendChat({
   }
 }
 
+// Local Python model bridge (used when offline / user opted in).
+const BACKEND_URL_FOR_LOCAL = (import.meta.env.VITE_BACKEND_URL as string | undefined) ?? "http://localhost:3001";
+export async function sendLocalChat({
+  messages,
+  systemPrompt,
+}: {
+  messages: { role: Role; content: string }[];
+  systemPrompt?: string;
+}): Promise<{ reply?: string; adapter?: string; error?: string }> {
+  try {
+    const resp = await fetch(`${BACKEND_URL_FOR_LOCAL}/api/local-chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages, system: systemPrompt }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) return { error: data?.error ?? `Local model HTTP ${resp.status}` };
+    return { reply: data.reply, adapter: data.adapter };
+  } catch (e) {
+    return {
+      error: `Cannot reach SARVIS bridge at ${BACKEND_URL_FOR_LOCAL}. Start it with: cd backend && npm run dev:backend`,
+    };
+  }
+}
+
 // Execute SARVIS system commands on the backend
 export async function executeSarvisCommand(command: string, args: string = ""): Promise<{ output?: string; error?: string; os?: string }> {
   try {

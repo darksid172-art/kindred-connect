@@ -140,6 +140,36 @@ Deno.serve(async (req) => {
       });
     }
 
+    if (action === "markRead") {
+      const ids: string[] = Array.isArray(body.ids) ? body.ids.filter((x: unknown) => typeof x === "string") : [];
+      if (ids.length === 0) {
+        return new Response(JSON.stringify({ ok: true, marked: 0 }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      // Gmail batchModify can do up to 1000 ids in one shot.
+      const r = await fetch(
+        "https://gmail.googleapis.com/gmail/v1/users/me/messages/batchModify",
+        {
+          method: "POST",
+          headers: { ...auth, "Content-Type": "application/json" },
+          body: JSON.stringify({ ids, removeLabelIds: ["UNREAD"] }),
+        },
+      );
+      if (!r.ok) {
+        const errText = await r.text();
+        if (r.status === 403 && /insufficient/i.test(errText)) {
+          throw new Error(
+            "Gmail MODIFY scope missing on your refresh token. Re-authorize Google with the gmail.modify scope and update GOOGLE_REFRESH_TOKEN.",
+          );
+        }
+        throw new Error(`Gmail markRead ${r.status}: ${errText}`);
+      }
+      return new Response(JSON.stringify({ ok: true, marked: ids.length }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     return new Response(JSON.stringify({ error: "unknown action" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

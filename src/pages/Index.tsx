@@ -153,6 +153,26 @@ const Index = () => {
       setChats([c]);
       setActiveId(c.id);
     }
+
+    // Personalized startup briefing — runs once per app load.
+    if (settings.startupBriefing) {
+      (async () => {
+        try {
+          const { buildStartupBriefing } = await import("@/lib/briefing");
+          const result = await buildStartupBriefing(settings);
+          // Append to whichever chat is active (or the first chat).
+          setChats((prev) => {
+            if (prev.length === 0) return prev;
+            const target = prev[0];
+            const msg = newMessage("assistant", result.text);
+            return prev.map((c) => (c.id === target.id ? { ...c, messages: [...c.messages, msg] } : c));
+          });
+          setSettings((s) => ({ ...s, lastBriefing: result.newSnapshot }));
+        } catch (e) {
+          console.warn("[sarvis] briefing failed", e);
+        }
+      })();
+    }
   }, []);
 
   // Monitor study mode and show profile dialog if needed
@@ -732,6 +752,23 @@ const Index = () => {
     const effectiveSystem = settings.studyMode 
       ? buildStudyPrompt(settings.userProfile)
       : settings.systemPrompt;
+
+    // Local Python model path (offline / opted-in). No streaming — one-shot reply.
+    if (settings.useLocalModel) {
+      const { sendLocalChat } = await import("@/lib/sarvis");
+      const r = await sendLocalChat({ messages: historyForApi, systemPrompt: effectiveSystem });
+      if (r.error) {
+        updateMessageContent(chatId, aiMsg.id, () => `⚠️ Local model unavailable: ${r.error}\n\nFalling back to online.`);
+        // fall through to online streaming below
+      } else {
+        updateMessageContent(chatId, aiMsg.id, () => `${r.reply ?? ""}\n\n_via local model (${r.adapter ?? "offline"}) — real-time data may be unavailable._`);
+        setStreamingId(null);
+        setBusy(false);
+        streamAbortControllerRef.current = null;
+        return;
+      }
+    }
+
     await streamChat({
       messages: historyForApi,
       model: settings.model,
