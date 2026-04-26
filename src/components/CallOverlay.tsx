@@ -159,13 +159,14 @@ export const CallOverlay = ({ open, onHangup, history, settings, onTurnComplete 
       content: m.content,
     }));
 
+    const { withLocalContext } = await import("@/lib/localContext");
+    const baseVoicePrompt = settings.systemPrompt && settings.systemPrompt.trim().length > 0
+      ? `${settings.systemPrompt}\n\nIMPORTANT: This reply will be spoken aloud. Keep it short and conversational. No markdown, no code blocks, no bullet lists.`
+      : "You are SARVIS. This reply will be spoken aloud — keep it short and conversational, no markdown.";
     const result = await sendChat({
       messages: messagesForApi,
       model: settings.model,
-      // Voice-specific prompt is set in chat-once function defaults; only override if user customized
-      systemPrompt: settings.systemPrompt && settings.systemPrompt.trim().length > 0
-        ? `${settings.systemPrompt}\n\nIMPORTANT: This reply will be spoken aloud. Keep it short and conversational. No markdown, no code blocks, no bullet lists.`
-        : undefined,
+      systemPrompt: withLocalContext(baseVoicePrompt),
     });
 
     if (result.error) {
