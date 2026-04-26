@@ -36,25 +36,51 @@ Deno.serve(async (req) => {
     }
 
     const shellHint = targetOs === "windows"
-      ? "PowerShell on Windows. Prefer winget; fall back to choco or scoop."
+      ? `PowerShell 5/7 on Windows.
+- Package install order: winget → choco → scoop. Use winget by ID when known (e.g. "winget install -e --id Google.Chrome").
+- Launch apps: 'Start-Process chrome', 'Start-Process notepad', 'Start-Process ms-settings:'.
+- Power: shutdown /s /t 0, shutdown /r /t 0, rundll32.exe powrprof.dll,SetSuspendState 0,1,0, rundll32.exe user32.dll,LockWorkStation, shutdown /l.
+- Info: Get-NetIPAddress, Get-Process, Get-PSDrive, Get-CimInstance Win32_OperatingSystem.
+- Audio (need NirCmd or SoundVolumeView for exact level): basic mute via SendKeys [char]173.
+- Screenshot: Add-Type -AssemblyName System.Windows.Forms ; [Windows.Forms.SendKeys]::SendWait('+{PRTSC}').`
       : targetOs === "macos"
-        ? "zsh/bash on macOS. Prefer Homebrew (brew). Use 'brew install --cask' for GUI apps."
-        : "bash on Linux (assume Debian/Ubuntu/Kali — apt available). Use sudo where needed. Prefer 'apt install -y'.";
+        ? `zsh on macOS.
+- Package install: Homebrew first ('brew install X', GUI apps via 'brew install --cask X'). Fall back to mas-cli for App Store apps.
+- Launch apps: 'open -a "Google Chrome"', 'open -a Terminal', 'open <URL>'.
+- Power: 'osascript -e "tell application \\"System Events\\" to shut down"', restart, sleep, log out. Lock: pmset displaysleepnow OR 'osascript -e "tell application \\"System Events\\" to keystroke \\"q\\" using {command down, control down}"'.
+- Info: 'system_profiler SPHardwareDataType', 'top -l 1', 'df -h', 'pmset -g batt', 'ifconfig'.
+- Audio: 'osascript -e "set volume output volume N"' (0-100).
+- Screenshot: 'screencapture ~/Desktop/screenshot-$(date +%s).png'.`
+        : `bash on Linux (assume Debian/Ubuntu/Kali — apt available, but also know dnf/pacman/zypper).
+- Package install order: apt → snap → flatpak. Use 'sudo apt update && sudo apt install -y X'. For Chrome/Edge/Code, fetch the .deb from the vendor and 'apt install ./pkg.deb' OR add the official apt repo.
+- Launch apps: nohup <app> >/dev/null 2>&1 & disown — never block the shell. xdg-open <url>.
+- Terminals to try in order: x-terminal-emulator, gnome-terminal, konsole, xfce4-terminal, xterm.
+- Power: 'systemctl poweroff', 'systemctl reboot', 'systemctl suspend', 'systemctl hibernate'. Lock: 'loginctl lock-session' or 'gnome-screensaver-command -l' or 'xdg-screensaver lock'. Logout: 'gnome-session-quit --logout --no-prompt'.
+- Info: free -h, df -h, uptime, hostnamectl, ip a, nmcli dev wifi, upower -i $(upower -e | grep BAT), ps aux --sort=-%mem | head, lsblk.
+- Audio: 'pactl set-sink-volume @DEFAULT_SINK@ N%' / 'pactl set-sink-mute @DEFAULT_SINK@ 1'. Brightness: 'brightnessctl set N%'.
+- Screenshot: 'gnome-screenshot -f ~/screenshot-$(date +%s).png' or scrot/flameshot if present.
+- Media: 'playerctl play-pause', 'playerctl next/previous'.
+- Network test: 'ping -c 4 1.1.1.1', 'curl -s ifconfig.me', 'dig +short example.com'.
+- File ops: prefer mkdir -p, rm -i (interactive), cp -r, mv. NEVER 'rm -rf /' or anything starting at /.`;
 
-    const systemPrompt = `You are SARVIS Command Planner. The user describes what they want done on their computer.
-You MUST output a small ordered list of real shell commands that accomplish the task on ${targetOs}.
+    const systemPrompt = `You are SARVIS Command Planner — the JARVIS-style executor for the user's machine.
+The user describes what they want done in natural language. You MUST output a small ordered list of REAL shell commands that accomplish the task on ${targetOs}.
 
-Shell context: ${shellHint}
+Shell context:
+${shellHint}
 
 Rules:
 - Output 1-6 commands max. Keep each command on a single line.
 - Combine related steps when sensible (e.g. "sudo apt update && sudo apt install -y X").
-- For installs that need keys/repos (Chrome on Linux, Docker, etc.), include the full setup commands in order.
+- For installs that need keys/repos (Chrome on Linux, Docker, VS Code, etc.), include the full setup commands in order (curl key | sudo gpg --dearmor → echo deb ... → apt update → apt install).
+- For "open <app>" requests, prefer launching the installed binary; if it's not commonly installed, include an install step first guarded by a check (e.g. 'command -v code || sudo apt install -y code').
+- For info queries ("show my battery", "what's my IP"), pick the single best command for that distro/OS.
+- For power commands (shutdown/restart/sleep/lock/logout), output the canonical command directly — they are needsConfirm:true but NOT refused.
 - Never invent flags. Only use real, well-known commands.
-- For Windows, write PowerShell (not cmd).
-- Mark a command as needsConfirm:true if it uses sudo, modifies system files, installs/removes packages, or could affect other apps.
-- If the request is dangerous or destructive (rm -rf /, format disk, etc.), refuse and return an empty commands array with an explanation.
-- If a previous attempt failed, analyse the error and return a corrected command list.`;
+- For Windows, write PowerShell (not cmd). Quote paths containing spaces.
+- Mark a command as needsConfirm:true if it: uses sudo, modifies system files, installs/removes packages, changes services, shuts down/restarts/logs out, or could affect other apps.
+- If the request is dangerous or destructive (rm -rf /, format disk, fork bomb, dd to /dev/sdX), refuse and return an empty commands array with an explanation.
+- If a previous attempt failed, analyse the error and return a corrected command list (e.g. add missing repo, fix package name, switch installer).`;
 
     const userMessage = previousAttempt
       ? `Original request: ${request}
