@@ -12,11 +12,22 @@ export type ModelId =
 export type OS = "linux" | "windows" | "macos";
 
 export interface UserProfile {
+  name?: string; // e.g., "Alex"
+  country?: string; // ISO-2 country code, e.g., "ke", "us"
   interests: string[]; // e.g., ["gaming", "technology", "art"]
   grade: string; // e.g., "High School", "College", "Graduate"
   educationLevel: string; // e.g., "Beginner", "Intermediate", "Advanced"
   subjects: string[]; // e.g., ["Mathematics", "Physics", "Computer Science"]
   setupComplete: boolean;
+}
+
+/** Snapshot from the previous startup briefing — used to compute deltas like "+12 new subscribers". */
+export interface BriefingSnapshot {
+  at: number;
+  subscriberCount?: number;
+  totalViews?: number;
+  topVideoId?: string;
+  topVideoViews?: number;
 }
 
 export interface AppSettings {
@@ -26,6 +37,14 @@ export interface AppSettings {
   studyMode: boolean;
   os: OS;
   userProfile?: UserProfile;
+  /** Show the personalized briefing whenever the app loads. */
+  startupBriefing: boolean;
+  /** Mark unread emails as read after SARVIS summarises them in the briefing. */
+  emailAutoMarkRead: boolean;
+  /** Prefer the local Python model bridge over the online AI gateway. */
+  useLocalModel: boolean;
+  /** Last YouTube/news snapshot for delta reporting. */
+  lastBriefing?: BriefingSnapshot;
 }
 
 export const DEFAULT_SYSTEM_PROMPT =
