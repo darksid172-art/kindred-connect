@@ -175,6 +175,61 @@ export const SettingsDialog = ({
               </p>
             </div>
 
+            {/* Personalization & Briefing */}
+            <div className="space-y-3 rounded-lg border border-border bg-secondary/30 p-3">
+              <Label className="text-sm font-medium">Personalization & Briefing</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-xs text-muted-foreground">Your name</Label>
+                  <input
+                    type="text"
+                    value={settings.userProfile?.name ?? ""}
+                    onChange={(e) =>
+                      onChange({
+                        ...settings,
+                        userProfile: { ...(settings.userProfile ?? { interests: [], grade: "", educationLevel: "", subjects: [], setupComplete: false }), name: e.target.value },
+                      })
+                    }
+                    placeholder="e.g. Alex"
+                    className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">Country (ISO-2)</Label>
+                  <input
+                    type="text"
+                    value={settings.userProfile?.country ?? ""}
+                    onChange={(e) =>
+                      onChange({
+                        ...settings,
+                        userProfile: { ...(settings.userProfile ?? { interests: [], grade: "", educationLevel: "", subjects: [], setupComplete: false }), country: e.target.value.toLowerCase().slice(0, 2) },
+                      })
+                    }
+                    placeholder="ke, us, gb…"
+                    className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                  />
+                </div>
+              </div>
+              <label className="flex items-center justify-between text-sm">
+                <span>Greet me with a briefing on startup</span>
+                <input type="checkbox" checked={settings.startupBriefing}
+                  onChange={(e) => onChange({ ...settings, startupBriefing: e.target.checked })} className="h-4 w-4" />
+              </label>
+              <label className="flex items-center justify-between text-sm">
+                <span>Mark unread emails read after summarizing</span>
+                <input type="checkbox" checked={settings.emailAutoMarkRead}
+                  onChange={(e) => onChange({ ...settings, emailAutoMarkRead: e.target.checked })} className="h-4 w-4" />
+              </label>
+              <label className="flex items-center justify-between text-sm">
+                <span>Use local Python model when offline</span>
+                <input type="checkbox" checked={settings.useLocalModel}
+                  onChange={(e) => onChange({ ...settings, useLocalModel: e.target.checked })} className="h-4 w-4" />
+              </label>
+              <p className="text-[11px] text-muted-foreground">
+                Local model uses the SARVIS bridge on <code>localhost:3001</code> with Ollama or a GGUF file. Real-time features (news, dashboard) won't work offline.
+              </p>
+            </div>
+
             {/* Danger zone */}
             <div className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
               <Label className="text-sm font-medium text-destructive">Danger zone</Label>
