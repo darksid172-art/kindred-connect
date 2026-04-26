@@ -55,6 +55,18 @@ import { generateDocument, generateSlides, generateVideo } from "@/lib/generator
 import { useSettings, applyTheme, STUDY_SYSTEM_PROMPT, buildStudyPrompt, type OS, type UserProfile } from "@/lib/settings";
 import { isSlashCommand, buildCommand, parseSlash, COMMAND_HELP } from "@/lib/systemCommands";
 import { SlideStyleDialog, rememberSlideStyle, type SlideStyleId } from "@/components/SlideStyleDialog";
+import {
+  parseComputerIntent,
+  parseSelfEditIntent,
+  planCommand,
+  planSelfEdit,
+  execCommand,
+  readProjectFile,
+  writeProjectFile,
+  type PlannedCommand,
+} from "@/lib/computer";
+import { ConfirmCommandDialog } from "@/components/ConfirmCommandDialog";
+import { SelfEditDialog } from "@/components/SelfEditDialog";
 import sarvisLogo from "@/assets/sarvis-logo.png";
 
 interface AttachedFile {
