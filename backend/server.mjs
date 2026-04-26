@@ -858,3 +858,139 @@ app.post('/api/learn', express.json({ limit: '1mb' }), async (req, res) => {
     return res.status(500).json({ error: String(e) });
   }
 });
+
+// ----------------------------------------------------------------------
+// Local Python model bridge — spawns backend/local_model.py once and pipes
+// chat requests over stdin/stdout. Used when the user enables "offline /
+// local model" in settings. The Python script handles Ollama / llama.cpp /
+// transformers internally.
+// ----------------------------------------------------------------------
+let _localPy = null;
+let _localPyReady = false;
+let _localPyBuffer = "";
+const _localPyPending = new Map(); // id → {resolve, reject, timer}
+let _localPyNextId = 1;
+
+function ensureLocalPython() {
+  if (_localPy && !_localPy.killed) return _localPy;
+  const pyBin = process.env.SARVIS_PYTHON || "python3";
+  const script = path.join(__dirname, "local_model.py");
+  if (!fs.existsSync(script)) {
+    throw new Error(`local_model.py not found at ${script}`);
+  }
+  console.log(`[sarvis] spawning local model bridge: ${pyBin} ${script}`);
+  const proc = spawn(pyBin, [script], {
+    cwd: __dirname,
+    env: { ...process.env },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  proc.stdout.setEncoding("utf8");
+  proc.stderr.setEncoding("utf8");
+  proc.stdout.on("data", (chunk) => {
+    _localPyBuffer += chunk;
+    let nl;
+    while ((nl = _localPyBuffer.indexOf("\n")) !== -1) {
+      const line = _localPyBuffer.slice(0, nl).trim();
+      _localPyBuffer = _localPyBuffer.slice(nl + 1);
+      if (!line) continue;
+      let parsed;
+      try {
+        parsed = JSON.parse(line);
+      } catch {
+        console.warn("[sarvis-local] non-JSON line:", line.slice(0, 200));
+        continue;
+      }
+      if (parsed && parsed.ready === true) {
+        _localPyReady = true;
+        console.log(`[sarvis] local model bridge ready (ollama=${parsed.ollama_model} @ ${parsed.ollama_host})`);
+        continue;
+      }
+      const id = parsed && parsed.id;
+      if (id != null && _localPyPending.has(id)) {
+        const { resolve, timer } = _localPyPending.get(id);
+        clearTimeout(timer);
+        _localPyPending.delete(id);
+        resolve(parsed);
+      }
+    }
+  });
+  proc.stderr.on("data", (chunk) => {
+    process.stderr.write(`[sarvis-local stderr] ${chunk}`);
+  });
+  proc.on("exit", (code) => {
+    console.warn(`[sarvis] local model bridge exited (code=${code})`);
+    _localPy = null;
+    _localPyReady = false;
+    for (const [id, { reject, timer }] of _localPyPending) {
+      clearTimeout(timer);
+      reject(new Error("local model process exited"));
+      _localPyPending.delete(id);
+    }
+  });
+  _localPy = proc;
+  return proc;
+}
+
+function callLocalPython({ messages, system }, timeoutMs = 120_000) {
+  return new Promise((resolve, reject) => {
+    let proc;
+    try {
+      proc = ensureLocalPython();
+    } catch (e) {
+      return reject(e);
+    }
+    const id = _localPyNextId++;
+    const timer = setTimeout(() => {
+      if (_localPyPending.has(id)) {
+        _localPyPending.delete(id);
+        reject(new Error("local model timed out"));
+      }
+    }, timeoutMs);
+    _localPyPending.set(id, { resolve, reject, timer });
+    try {
+      proc.stdin.write(JSON.stringify({ id, messages, system }) + "\n");
+    } catch (e) {
+      clearTimeout(timer);
+      _localPyPending.delete(id);
+      reject(e);
+    }
+  });
+}
+
+app.get("/api/local-chat/status", (req, res) => {
+  res.json({
+    running: !!(_localPy && !_localPy.killed),
+    ready: _localPyReady,
+    pending: _localPyPending.size,
+    pythonBin: process.env.SARVIS_PYTHON || "python3",
+    ollamaHost: process.env.OLLAMA_HOST || "http://127.0.0.1:11434",
+    ollamaModel: process.env.OLLAMA_MODEL || "llama3.2",
+  });
+});
+
+app.post("/api/local-chat", async (req, res) => {
+  try {
+    const { messages, system } = req.body || {};
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ error: "messages[] required" });
+    }
+    const out = await callLocalPython({ messages, system });
+    if (out && out.error) {
+      return res.status(503).json({ error: out.error, tried: out.tried ?? [] });
+    }
+    return res.json({ reply: out.reply ?? "", adapter: out.adapter ?? "unknown" });
+  } catch (e) {
+    return res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+app.post("/api/local-chat/stop", (req, res) => {
+  if (_localPy && !_localPy.killed) {
+    _localPy.kill("SIGTERM");
+    _localPy = null;
+    _localPyReady = false;
+    return res.json({ ok: true, stopped: true });
+  }
+  res.json({ ok: true, stopped: false });
+});
+
