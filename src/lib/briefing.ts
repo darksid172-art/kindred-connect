@@ -167,7 +167,7 @@ export async function buildStartupBriefing(
     // Calendar optional
   }
 
-  sections.push("\n_Ask me anything — or say 'shutdown my pc', 'open chrome', 'read my emails'._");
+  sections.push("\n_Ask me anything — try 'what's the weather', 'read my emails', 'open chrome', or 'shutdown my pc'._");
 
   return {
     text: sections.join("\n\n"),
