@@ -122,6 +122,34 @@ export async function getNews(
   }
 }
 
+// ---------- Weather (Open-Meteo, no key) ----------
+export interface WeatherForecast {
+  place: string | null;
+  lat: number;
+  lon: number;
+  timezone: string;
+  current: {
+    temp: number; feelsLike: number; humidity: number; wind: number;
+    isDay: boolean; summary: string; code: number;
+  };
+  days: Array<{
+    date: string; summary: string; tMax: number; tMin: number;
+    pop: number; sunrise: string; sunset: string;
+  }>;
+}
+export async function getWeather(
+  params: { lat?: number; lon?: number; place?: string } = {},
+): Promise<{ forecast?: WeatherForecast; error?: string }> {
+  try {
+    const { data, error } = await supabase.functions.invoke("get-weather", { body: params });
+    if (error) return { error: error.message };
+    if (data?.error) return { error: data.error };
+    return { forecast: data as WeatherForecast };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Weather API error" };
+  }
+}
+
 const PROJECT_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
 
