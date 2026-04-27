@@ -35,7 +35,8 @@ import {
   Theme,
   ModelId,
 } from "@/lib/settings";
-import { RotateCcw, Trash2, Check } from "lucide-react";
+import { RotateCcw, Trash2, Check, Upload, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 interface SettingsDialogProps {
@@ -54,6 +55,50 @@ export const SettingsDialog = ({
   onClearAll,
 }: SettingsDialogProps) => {
   const [confirmClear, setConfirmClear] = useState(false);
+  const [uploadingModel, setUploadingModel] = useState(false);
+  const [uploadedModel, setUploadedModel] = useState<string | null>(null);
+
+  const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string | undefined) ?? "http://localhost:3001";
+
+  const handlePickGguf = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!/\.gguf$/i.test(file.name)) {
+      toast.error("Please pick a .gguf model file.");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024 * 1024) {
+      toast.error("Model is larger than 8 GB — too big to upload through the browser.");
+      return;
+    }
+    setUploadingModel(true);
+    try {
+      // Read file as base64
+      const buf = await file.arrayBuffer();
+      let binary = "";
+      const bytes = new Uint8Array(buf);
+      const chunk = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+      }
+      const dataBase64 = btoa(binary);
+      const resp = await fetch(`${BACKEND_URL}/api/upload-model`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, dataBase64 }),
+      });
+      const j = await resp.json().catch(() => ({}));
+      if (!resp.ok || j.error) throw new Error(j.error ?? `HTTP ${resp.status}`);
+      setUploadedModel(file.name);
+      toast.success(`Loaded local model: ${file.name}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`Couldn't upload model: ${msg}`);
+    } finally {
+      setUploadingModel(false);
+    }
+  };
 
   const setTheme = (theme: Theme) => onChange({ ...settings, theme });
   
