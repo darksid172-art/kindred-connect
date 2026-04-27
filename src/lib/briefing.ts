@@ -3,7 +3,7 @@
 // builds a single greeting message. Computes deltas vs the previous snapshot
 // so SARVIS can say things like "+12 new subscribers since yesterday".
 
-import { getNews } from "@/lib/sarvis";
+import { getNews, getWeather } from "@/lib/sarvis";
 import { listGmail, listCalendar, getYouTubeAnalytics, markGmailRead } from "@/lib/google";
 import type { AppSettings, BriefingSnapshot, UserProfile } from "@/lib/settings";
 
@@ -120,6 +120,37 @@ export async function buildStartupBriefing(
     }
   } catch {
     // News optional
+  }
+
+  // ---- Weather (Open-Meteo, no key needed) ----
+  try {
+    const cc = (profile?.country || "").trim();
+    if (cc) {
+      const w = await getWeather({ place: cc });
+      if (w.forecast) {
+        const f = w.forecast;
+        const today = f.days[0];
+        const tomorrow = f.days[1];
+        const lines = [`## ☀️ Weather${f.place ? ` — ${f.place}` : ""}`];
+        lines.push(
+          `Now: **${Math.round(f.current.temp)}°C** · ${f.current.summary} · feels ${Math.round(f.current.feelsLike)}°C · 💧${f.current.humidity}% · 🌬 ${Math.round(f.current.wind)} km/h`,
+        );
+        if (today) {
+          lines.push(`Today: ${today.summary} · ${Math.round(today.tMin)}°–${Math.round(today.tMax)}°C · rain ${today.pop}%`);
+        }
+        if (tomorrow) {
+          lines.push(`Tomorrow: ${tomorrow.summary} · ${Math.round(tomorrow.tMin)}°–${Math.round(tomorrow.tMax)}°C · rain ${tomorrow.pop}%`);
+        }
+        if (today && today.pop >= 70) {
+          lines.push(`☔ **Heads up — high chance of rain today (${today.pop}%).** Carry an umbrella.`);
+        } else if ((today?.tMax ?? 0) >= 32) {
+          lines.push(`🥵 **It'll be hot — up to ${Math.round(today.tMax)}°C. Stay hydrated.**`);
+        }
+        sections.push(lines.join("\n"));
+      }
+    }
+  } catch {
+    // Weather optional
   }
 
   // ---- Calendar (today + tomorrow) ----
