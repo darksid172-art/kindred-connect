@@ -581,22 +581,31 @@ app.post('/api/ai-mode', express.json(), (req, res) => {
   }
 });
 
-// Upload a GGUF model as base64 JSON payload: { filename, dataBase64 }
-app.post('/api/upload-model', express.json({ limit: '200mb' }), (req, res) => {
+// Upload a GGUF model as base64 JSON payload: { filename, dataBase64 }.
+// Saves it under backend/models/ and points the local Python bridge to it
+// via SARVIS_GGUF_PATH so the next /api/local-chat call uses it.
+const MODELS_DIR = path.join(__dirname, "models");
+app.post('/api/upload-model', express.json({ limit: '4gb' }), (req, res) => {
   try {
     const { filename, dataBase64 } = req.body || {};
-    if (!filename || !dataBase64) return res.status(400).json({ error: 'missing' });
+    if (!filename || !dataBase64) return res.status(400).json({ error: 'missing filename/dataBase64' });
+    const safeName = path.basename(String(filename));
+    if (!/\.gguf$/i.test(safeName)) return res.status(400).json({ error: 'must be .gguf' });
     const buf = Buffer.from(dataBase64, 'base64');
-    // quick magic check
-    if (buf.length < 4 || buf.slice(0,4).toString('ascii') !== 'GGUF') {
+    if (buf.length < 4 || buf.slice(0, 4).toString('ascii') !== 'GGUF') {
       return res.status(400).json({ error: 'not a GGUF file' });
     }
-    const savePath = new URL(filename, import.meta.url).pathname.replace('/home/kali/Downloads/github-project-guide-main/','/home/kali/Downloads/github-project-guide-main/');
-    // Save in project root
-    const outPath = MODELS_DIR + filename;
-    require('fs').writeFileSync(outPath, buf);
-    aiMode.model = filename;
-    return res.json({ ok: true, filename });
+    fs.mkdirSync(MODELS_DIR, { recursive: true });
+    const outPath = path.join(MODELS_DIR, safeName);
+    fs.writeFileSync(outPath, buf);
+    // Point the python bridge at this file and restart it so the new path takes effect.
+    process.env.SARVIS_GGUF_PATH = outPath;
+    if (typeof _localPy !== 'undefined' && _localPy && !_localPy.killed) {
+      try { _localPy.kill('SIGTERM'); } catch (_) { /* ignore */ }
+      _localPy = null;
+      _localPyReady = false;
+    }
+    return res.json({ ok: true, filename: safeName, path: outPath, bytes: buf.length });
   } catch (e) {
     return res.status(500).json({ error: String(e) });
   }
