@@ -34,6 +34,7 @@ import {
   executeSarvisCommand,
   parseNewsRequest,
   getNews,
+  getWeather,
 } from "@/lib/sarvis";
 import {
   parseNearbyIntent,
@@ -500,6 +501,41 @@ const Index = () => {
       ...activeChat.messages.map((m) => ({ role: m.role, content: m.content })),
       { role: "user" as const, content: outgoing },
     ];
+
+    // ---- Weather (Open-Meteo) ----
+    const weatherMatch = text.match(/\b(weather|forecast|rain|temperature|how (?:hot|cold))\b(?:\s+(?:in|at|for)\s+([a-z][a-z\s,'-]{1,60}))?/i);
+    if (weatherMatch) {
+      const place =
+        (weatherMatch[2] || "").trim() ||
+        settings.userProfile?.country ||
+        "";
+      const placeholder = newMessage("assistant", "");
+      appendMessage(chatId, placeholder);
+      setStreamingId(placeholder.id);
+      const r = await getWeather(place ? { place } : {});
+      setStreamingId(null);
+      if (r.error || !r.forecast) {
+        updateMessageContent(chatId, placeholder.id, () => `Weather error: ${r.error ?? "no data"}`);
+      } else {
+        const f = r.forecast;
+        const dayLines = f.days.slice(0, 4)
+          .map((d) => {
+            const dt = new Date(d.date).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+            return `- **${dt}** — ${d.summary} · ${Math.round(d.tMin)}°–${Math.round(d.tMax)}°C · rain ${d.pop}%`;
+          })
+          .join("\n");
+        updateMessageContent(
+          chatId,
+          placeholder.id,
+          () =>
+            `## ☀️ Weather${f.place ? ` — ${f.place}` : ""}\n\n` +
+            `**Now:** ${Math.round(f.current.temp)}°C · ${f.current.summary} · feels ${Math.round(f.current.feelsLike)}°C · 💧${f.current.humidity}% · 🌬 ${Math.round(f.current.wind)} km/h\n\n` +
+            `**Next 4 days:**\n${dayLines}\n\n_Open the [Dashboard](/dashboard) for the full widget._`,
+        );
+      }
+      setBusy(false);
+      return;
+    }
 
     const newsIntent = parseNewsRequest(text);
     if (newsIntent.isNews) {
