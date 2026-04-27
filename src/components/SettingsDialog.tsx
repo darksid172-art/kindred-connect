@@ -273,6 +273,31 @@ export const SettingsDialog = ({
               <p className="text-[11px] text-muted-foreground">
                 Local model uses the SARVIS bridge on <code>localhost:3001</code> with Ollama or a GGUF file. Real-time features (news, dashboard) won't work offline.
               </p>
+              <div className="flex items-center gap-2">
+                <input
+                  id="gguf-picker"
+                  type="file"
+                  accept=".gguf"
+                  className="hidden"
+                  onChange={handlePickGguf}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  disabled={uploadingModel}
+                  onClick={() => document.getElementById("gguf-picker")?.click()}
+                >
+                  {uploadingModel ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                  {uploadingModel ? "Uploading…" : "Pick GGUF model file"}
+                </Button>
+                {uploadedModel && (
+                  <span className="truncate text-[11px] text-muted-foreground">
+                    Loaded: <code>{uploadedModel}</code>
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Danger zone */}
