@@ -122,6 +122,34 @@ export async function getNews(
   }
 }
 
+// ---------- Weather (Open-Meteo, no key) ----------
+export interface WeatherForecast {
+  place: string | null;
+  lat: number;
+  lon: number;
+  timezone: string;
+  current: {
+    temp: number; feelsLike: number; humidity: number; wind: number;
+    isDay: boolean; summary: string; code: number;
+  };
+  days: Array<{
+    date: string; summary: string; tMax: number; tMin: number;
+    pop: number; sunrise: string; sunset: string;
+  }>;
+}
+export async function getWeather(
+  params: { lat?: number; lon?: number; place?: string } = {},
+): Promise<{ forecast?: WeatherForecast; error?: string }> {
+  try {
+    const { data, error } = await supabase.functions.invoke("get-weather", { body: params });
+    if (error) return { error: error.message };
+    if (data?.error) return { error: data.error };
+    return { forecast: data as WeatherForecast };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Weather API error" };
+  }
+}
+
 const PROJECT_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
 
@@ -133,6 +161,7 @@ export async function streamChat({
   onDone,
   onError,
   signal,
+  _isFallback,
 }: {
   messages: { role: Role; content: string }[];
   model?: string;
@@ -141,15 +170,25 @@ export async function streamChat({
   onDone: () => void;
   onError: (err: string) => void;
   signal?: AbortSignal;
+  _isFallback?: boolean;
 }) {
+  // Route Anthropic models directly to chat-claude.
+  const isClaude = typeof model === "string" && model.startsWith("anthropic/");
+  const endpoint = isClaude ? "chat-claude" : "chat";
+  const claudeModel = isClaude ? model!.replace("anthropic/", "") : undefined;
+
   try {
-    const resp = await fetch(`${PROJECT_URL}/functions/v1/chat`, {
+    const resp = await fetch(`${PROJECT_URL}/functions/v1/${endpoint}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${PUBLISHABLE_KEY}`,
       },
-      body: JSON.stringify({ messages, model, systemPrompt }),
+      body: JSON.stringify({
+        messages,
+        model: isClaude ? claudeModel : model,
+        systemPrompt,
+      }),
       signal,
     });
 
@@ -161,6 +200,26 @@ export async function streamChat({
       } catch {
         // ignore
       }
+
+      // Auto-fallback to Claude on 402 (Lovable AI credits exhausted) once.
+      if (resp.status === 402 && !_isFallback && !isClaude) {
+        console.warn("[sarvis] Lovable AI credits exhausted — falling back to Claude.");
+        await streamChat({
+          messages,
+          model: "anthropic/claude-3-5-haiku-latest",
+          systemPrompt,
+          onDelta,
+          onDone: () => {
+            onDelta("\n\n_(Switched to Claude — Lovable AI credits are exhausted. Add credits in Settings → Workspace → Usage.)_");
+            onDone();
+          },
+          onError,
+          signal,
+          _isFallback: true,
+        });
+        return;
+      }
+
       onError(msg);
       return;
     }
