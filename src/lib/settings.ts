@@ -135,12 +135,25 @@ export const THEME_OPTIONS: {
 
 const KEY = "sarvis_settings";
 
+const VALID_MODELS = new Set<string>([
+  "google/gemini-3-flash-preview",
+  "google/gemini-2.5-flash",
+  "google/gemini-2.5-pro",
+  "openai/gpt-5-mini",
+  "openai/gpt-5",
+]);
+
 export function loadSettings(): AppSettings {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return DEFAULT_SETTINGS;
     const parsed = JSON.parse(raw);
-    return { ...DEFAULT_SETTINGS, ...parsed };
+    const merged = { ...DEFAULT_SETTINGS, ...parsed } as AppSettings;
+    // Migrate away from removed Anthropic models.
+    if (!VALID_MODELS.has(merged.model as string)) {
+      merged.model = DEFAULT_SETTINGS.model;
+    }
+    return merged;
   } catch {
     return DEFAULT_SETTINGS;
   }
