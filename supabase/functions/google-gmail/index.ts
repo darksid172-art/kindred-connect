@@ -1,5 +1,5 @@
-// Gmail edge function — list inbox + send email.
-// Uses the GOOGLE_REFRESH_TOKEN to auto-mint short-lived access tokens.
+// Gmail edge function — list inbox, fetch a single message, mark read, send email.
+// v2 — actions: list | get | markRead | send. Uses GOOGLE_REFRESH_TOKEN.
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
