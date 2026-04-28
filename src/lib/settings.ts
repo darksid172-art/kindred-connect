@@ -7,9 +7,7 @@ export type ModelId =
   | "google/gemini-2.5-flash"
   | "google/gemini-2.5-pro"
   | "openai/gpt-5-mini"
-  | "openai/gpt-5"
-  | "anthropic/claude-3-5-haiku-latest"
-  | "anthropic/claude-3-5-sonnet-latest";
+  | "openai/gpt-5";
 
 export type OS = "linux" | "windows" | "macos";
 
@@ -120,8 +118,6 @@ export const MODEL_OPTIONS: { value: ModelId; label: string; hint: string }[] = 
   { value: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro", hint: "Smartest Gemini" },
   { value: "openai/gpt-5-mini", label: "GPT-5 Mini", hint: "OpenAI • Fast" },
   { value: "openai/gpt-5", label: "GPT-5", hint: "OpenAI • Top quality" },
-  { value: "anthropic/claude-3-5-haiku-latest", label: "Claude 3.5 Haiku", hint: "Anthropic • Fast" },
-  { value: "anthropic/claude-3-5-sonnet-latest", label: "Claude 3.5 Sonnet", hint: "Anthropic • Smart" },
 ];
 
 export const THEME_OPTIONS: {
@@ -139,12 +135,25 @@ export const THEME_OPTIONS: {
 
 const KEY = "sarvis_settings";
 
+const VALID_MODELS = new Set<string>([
+  "google/gemini-3-flash-preview",
+  "google/gemini-2.5-flash",
+  "google/gemini-2.5-pro",
+  "openai/gpt-5-mini",
+  "openai/gpt-5",
+]);
+
 export function loadSettings(): AppSettings {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return DEFAULT_SETTINGS;
     const parsed = JSON.parse(raw);
-    return { ...DEFAULT_SETTINGS, ...parsed };
+    const merged = { ...DEFAULT_SETTINGS, ...parsed } as AppSettings;
+    // Migrate away from removed Anthropic models.
+    if (!VALID_MODELS.has(merged.model as string)) {
+      merged.model = DEFAULT_SETTINGS.model;
+    }
+    return merged;
   } catch {
     return DEFAULT_SETTINGS;
   }

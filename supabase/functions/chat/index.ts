@@ -1,3 +1,7 @@
+// SARVIS chat — streams from the Lovable AI Gateway.
+// No third-party fallback. On 402 we return a friendly JSON error and let the
+// client surface it without crashing.
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -40,7 +44,12 @@ Deno.serve(async (req) => {
         : DEFAULT_SYSTEM_PROMPT;
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
+    if (!LOVABLE_API_KEY) {
+      return new Response(JSON.stringify({ error: "LOVABLE_API_KEY not configured" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -62,86 +71,15 @@ Deno.serve(async (req) => {
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
-      // On 402 (credits exhausted) auto-fallback to Anthropic Claude server-side
-      // so the user never sees a credit-exhausted runtime error.
       if (response.status === 402) {
-        const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
-        if (ANTHROPIC_API_KEY) {
-          try {
-            const claudeMsgs = (messages as { role: string; content: string }[])
-              .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
-              .map((m) => ({ role: m.role, content: m.content }));
-            const cResp = await fetch("https://api.anthropic.com/v1/messages", {
-              method: "POST",
-              headers: {
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                model: "claude-3-5-haiku-latest",
-                system: safePrompt,
-                messages: claudeMsgs,
-                max_tokens: 1024,
-                stream: true,
-              }),
-            });
-            if (cResp.ok && cResp.body) {
-              // Translate Anthropic SSE → OpenAI-style chunks
-              const encoder = new TextEncoder();
-              const stream = new ReadableStream({
-                async start(controller) {
-                  const reader = cResp.body!.getReader();
-                  const decoder = new TextDecoder();
-                  let buf = "";
-                  const send = (delta: string) => {
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: delta } }] })}\n\n`));
-                  };
-                  try {
-                    while (true) {
-                      const { done, value } = await reader.read();
-                      if (done) break;
-                      buf += decoder.decode(value, { stream: true });
-                      let nl: number;
-                      while ((nl = buf.indexOf("\n")) !== -1) {
-                        const line = buf.slice(0, nl).trim();
-                        buf = buf.slice(nl + 1);
-                        if (!line.startsWith("data:")) continue;
-                        const d = line.slice(5).trim();
-                        if (!d || d === "[DONE]") continue;
-                        try {
-                          const evt = JSON.parse(d);
-                          if (evt.type === "content_block_delta" && evt.delta?.type === "text_delta") {
-                            send(evt.delta.text ?? "");
-                          }
-                        } catch { /* partial */ }
-                      }
-                    }
-                    controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-                    controller.close();
-                  } catch (err) {
-                    console.error("claude fallback stream error", err);
-                    controller.error(err);
-                  }
-                },
-              });
-              return new Response(stream, {
-                headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
-              });
-            }
-            console.error("Claude fallback not ok", cResp.status, await cResp.text());
-          } catch (err) {
-            console.error("Claude fallback threw", err);
-          }
-        }
         return new Response(
-          JSON.stringify({ error: "AI credits exhausted. Add funds in Lovable workspace." }),
+          JSON.stringify({ error: "AI credits exhausted on Lovable. Add funds in your Lovable workspace → Usage." }),
           { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
       const t = await response.text();
       console.error("AI gateway error", response.status, t);
-      return new Response(JSON.stringify({ error: "AI gateway error" }), {
+      return new Response(JSON.stringify({ error: `AI gateway error (${response.status})` }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
