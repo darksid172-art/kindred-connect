@@ -320,7 +320,7 @@ export const SettingsDialog = ({
           </div>
 
           <DialogFooter>
-            <Button onClick={() => onOpenChange(false)}>Done</Button>
+            <Button onClick={() => { toast.success("Settings saved"); onOpenChange(false); }}>Done</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
